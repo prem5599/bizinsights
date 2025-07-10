@@ -1,27 +1,28 @@
 // src/app/layout.tsx
-import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
-import { SessionProvider } from '@/components/providers/SessionProvider'
-import './globals.css'
+import type { Metadata } from "next"
+import { Inter } from "next/font/google"
+import "./globals.css"
+import { AuthProvider } from "@/components/providers/AuthProvider"
+import { cn } from "@/lib/utils"
 
-const inter = Inter({ subsets: ['latin'] })
+const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: 'BizInsights - Business Analytics Dashboard',
-  description: 'Simple analytics dashboard for small businesses',
+  title: "BizInsights - Simple Analytics Dashboard",
+  description: "Analytics dashboard for small businesses",
 }
 
 export default function RootLayout({
   children,
-}: {
+}: Readonly<{
   children: React.ReactNode
-}) {
+}>) {
   return (
     <html lang="en">
-      <body className={inter.className} suppressHydrationWarning={true}>
-        <SessionProvider>
+      <body className={cn(inter.className, "antialiased")}>
+        <AuthProvider>
           {children}
-        </SessionProvider>
+        </AuthProvider>
       </body>
     </html>
   )
