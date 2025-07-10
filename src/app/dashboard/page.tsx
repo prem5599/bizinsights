@@ -1,4 +1,4 @@
-// app/dashboard/page.tsx
+// src/app/dashboard/page.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -12,7 +12,11 @@ import {
   TrendingUp,
   BarChart3,
   Eye,
-  Zap
+  Zap,
+  RefreshCw,
+  AlertTriangle,
+  CheckCircle,
+  Info
 } from 'lucide-react'
 
 interface MetricData {
@@ -74,14 +78,14 @@ export default function DashboardPage() {
       const response = await fetch(`/api/organizations/${orgId}/dashboard`)
       
       if (!response.ok) {
-        throw new Error('Failed to fetch dashboard data')
+        throw new Error(`Failed to fetch dashboard data: ${response.status}`)
       }
       
       const fetchedData = await response.json()
       setData(fetchedData)
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error)
-      setError('Failed to load dashboard data')
+      setError(error instanceof Error ? error.message : 'Failed to load dashboard data')
       
       // Fallback to sample data on error
       const sampleData: DashboardData = {
@@ -94,7 +98,17 @@ export default function DashboardPage() {
           aov: { current: 131.58, previous: 127.52, change: 3.2, trend: 'up' }
         },
         charts: { revenue_trend: [], traffic_sources: [] },
-        insights: [],
+        insights: [
+          {
+            id: 'sample-1',
+            type: 'recommendation',
+            title: 'Connect your first integration',
+            description: 'Add Shopify, Stripe, or Google Analytics to start seeing real business insights',
+            impactScore: 10,
+            isRead: false,
+            createdAt: new Date().toISOString()
+          }
+        ],
         integrations: [],
         hasRealData: false,
         message: 'Using sample data due to connection error'
@@ -153,6 +167,10 @@ export default function DashboardPage() {
     }
   }
 
+  const dismissError = () => {
+    setError(null)
+  }
+
   return (
     <DashboardLayout>
       <div className="space-y-6 sm:space-y-8">
@@ -170,7 +188,7 @@ export default function DashboardPage() {
             </div>
             
             <div className="flex items-center space-x-3">
-              <select className="rounded-lg border-slate-300 text-sm focus:border-blue-500 focus:ring-blue-500">
+              <select className="rounded-lg border-slate-300 text-sm focus:border-blue-500 focus:ring-blue-500 bg-white px-3 py-2">
                 <option>Last 30 days</option>
                 <option>Last 7 days</option>
                 <option>Last 90 days</option>
@@ -178,25 +196,57 @@ export default function DashboardPage() {
               
               <button
                 onClick={fetchDashboardData}
-                className="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={loading}
+                className="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <BarChart3 className="mr-2 h-4 w-4" />
-                Refresh
+                <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                {loading ? 'Loading...' : 'Refresh'}
               </button>
             </div>
           </div>
         </div>
 
+        {/* Error State */}
+        {error && (
+          <div className="rounded-lg bg-red-50 border border-red-200 p-4">
+            <div className="flex">
+              <AlertTriangle className="h-5 w-5 text-red-400" />
+              <div className="ml-3 flex-1">
+                <h3 className="text-sm font-medium text-red-800">
+                  Error loading dashboard
+                </h3>
+                <div className="mt-2 text-sm text-red-700">
+                  <p>{error}</p>
+                </div>
+                <div className="mt-4 flex space-x-3">
+                  <button
+                    onClick={fetchDashboardData}
+                    className="rounded-md bg-red-100 px-3 py-2 text-sm font-medium text-red-800 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  >
+                    Try again
+                  </button>
+                  <button
+                    onClick={dismissError}
+                    className="rounded-md bg-white px-3 py-2 text-sm font-medium text-red-800 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Data Source Indicator */}
         {!loading && data && (
-          <div className={`rounded-lg border p-4 mb-6 ${
+          <div className={`rounded-lg border p-4 ${
             data.hasRealData ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200'
           }`}>
             <div className="flex items-center space-x-3">
               <div className={`h-2 w-2 rounded-full ${
                 data.hasRealData ? 'bg-green-500' : 'bg-blue-500'
               }`} />
-              <div>
+              <div className="flex-1">
                 <p className={`text-sm font-medium ${
                   data.hasRealData ? 'text-green-800' : 'text-blue-800'
                 }`}>
@@ -214,7 +264,7 @@ export default function DashboardPage() {
               {!data.hasRealData && (
                 <button
                   onClick={() => window.location.href = '/dashboard/integrations'}
-                  className="ml-auto px-3 py-1 text-xs font-medium text-blue-800 bg-blue-100 rounded-md hover:bg-blue-200"
+                  className="px-3 py-1 text-xs font-medium text-blue-800 bg-blue-100 rounded-md hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   Connect Integration
                 </button>
@@ -223,42 +273,18 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Error State */}
-        {error && (
-          <div className="rounded-lg bg-red-50 border border-red-200 p-4">
-            <div className="flex">
-              <div className="ml-3">
-                <h3 className="text-sm font-medium text-red-800">
-                  Error loading dashboard
-                </h3>
-                <div className="mt-2 text-sm text-red-700">
-                  <p>{error}</p>
-                </div>
-                <div className="mt-4">
-                  <button
-                    onClick={fetchDashboardData}
-                    className="rounded-md bg-red-100 px-3 py-2 text-sm font-medium text-red-800 hover:bg-red-200"
-                  >
-                    Try again
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Key Metrics Grid */}
-        <div className="grid grid-cols-1 gap-4 sm:gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        <div className="grid grid-cols-1 gap-4 sm:gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <MetricCard
             title="Total Revenue"
             value={data?.metrics.revenue.current || 0}
             change={data?.metrics.revenue.change}
             trend={data?.metrics.revenue.trend}
             format="currency"
-            period="vs last 30 days"
             isLoading={loading}
             icon={<DollarSign className="h-5 w-5" />}
             description="Total revenue generated"
+            className="col-span-1 xl:col-span-2"
           />
           
           <MetricCard
@@ -266,7 +292,6 @@ export default function DashboardPage() {
             value={data?.metrics.orders.current || 0}
             change={data?.metrics.orders.change}
             trend={data?.metrics.orders.trend}
-            period="vs last 30 days"
             isLoading={loading}
             icon={<ShoppingCart className="h-5 w-5" />}
             description="Total orders received"
@@ -277,7 +302,6 @@ export default function DashboardPage() {
             value={data?.metrics.sessions.current || 0}
             change={data?.metrics.sessions.change}
             trend={data?.metrics.sessions.trend}
-            period="vs last 30 days"
             isLoading={loading}
             icon={<Eye className="h-5 w-5" />}
             description="Unique website visitors"
@@ -288,7 +312,6 @@ export default function DashboardPage() {
             value={data?.metrics.customers.current || 0}
             change={data?.metrics.customers.change}
             trend={data?.metrics.customers.trend}
-            period="vs last 30 days"
             isLoading={loading}
             icon={<Users className="h-5 w-5" />}
             description="Total unique customers"
@@ -300,63 +323,81 @@ export default function DashboardPage() {
             change={data?.metrics.aov.change}
             trend={data?.metrics.aov.trend}
             format="currency"
-            period="vs last 30 days"
             isLoading={loading}
             icon={<TrendingUp className="h-5 w-5" />}
             description="Average value per order"
           />
         </div>
 
-        {/* AI Insights */}
-        {!loading && data?.insights && (
-          <div className="rounded-xl bg-white p-4 sm:p-6 shadow-sm border border-slate-200">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center space-x-2">
-                <h2 className="text-lg font-semibold text-slate-900">
-                  AI Insights
-                </h2>
-                <Zap className="h-5 w-5 text-yellow-500" />
-                {data.insights.filter(i => !i.isRead).length > 0 && (
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                    {data.insights.filter(i => !i.isRead).length} new
-                  </span>
-                )}
+        {/* AI Insights Section */}
+        {!loading && data && (
+          <div className="rounded-xl bg-white p-6 shadow-sm border border-slate-200">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-yellow-100 rounded-lg">
+                  <Zap className="h-5 w-5 text-yellow-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">
+                    AI Insights
+                  </h3>
+                  <p className="text-sm text-slate-600">
+                    Intelligent analysis of your business data
+                  </p>
+                </div>
               </div>
               
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-3">
                 {data.hasRealData && (
                   <button
                     onClick={handleRefreshInsights}
                     disabled={refreshingInsights}
-                    className="text-sm text-blue-600 hover:text-blue-800 font-medium disabled:opacity-50"
+                    className="inline-flex items-center px-3 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                   >
+                    <RefreshCw className={`mr-2 h-4 w-4 ${refreshingInsights ? 'animate-spin' : ''}`} />
                     {refreshingInsights ? 'Generating...' : 'Refresh Insights'}
                   </button>
                 )}
               </div>
             </div>
             
-            <InsightsList
-              insights={data.insights}
-              onMarkAsRead={handleMarkInsightAsRead}
-              limit={3}
-              showActions={true}
-            />
-            
-            {data.insights.length > 3 && (
-              <div className="mt-4 text-center">
-                <button 
-                  onClick={() => window.location.href = '/dashboard/insights'}
-                  className="text-sm text-blue-600 hover:text-blue-800 font-medium"
-                >
-                  View all insights →
-                </button>
+            {data.insights.length > 0 ? (
+              <>
+                <InsightsList
+                  insights={data.insights}
+                  onMarkAsRead={handleMarkInsightAsRead}
+                  limit={3}
+                  showActions={true}
+                />
+                
+                {data.insights.length > 3 && (
+                  <div className="mt-4 text-center">
+                    <button 
+                      onClick={() => window.location.href = '/dashboard/insights'}
+                      className="text-sm text-blue-600 hover:text-blue-800 font-medium focus:outline-none focus:underline"
+                    >
+                      View all insights →
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="flex items-center justify-center h-32 bg-slate-50 rounded-lg">
+                <div className="text-center">
+                  <Info className="h-8 w-8 text-slate-400 mx-auto mb-2" />
+                  <p className="text-slate-600 text-sm">
+                    {data.hasRealData 
+                      ? 'No insights available yet. Check back soon!' 
+                      : 'Connect your integrations to see AI-powered insights'
+                    }
+                  </p>
+                </div>
               </div>
             )}
           </div>
         )}
 
-        {/* Coming Soon - Charts Section */}
+        {/* Charts Section - Coming Soon */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="rounded-xl bg-white p-6 shadow-sm border border-slate-200">
             <h3 className="text-lg font-semibold text-slate-900 mb-4">
@@ -365,7 +406,8 @@ export default function DashboardPage() {
             <div className="flex items-center justify-center h-64 bg-slate-50 rounded-lg">
               <div className="text-center">
                 <BarChart3 className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-                <p className="text-slate-600">Charts coming in next phase</p>
+                <p className="text-slate-600 text-sm">Charts coming in next phase</p>
+                <p className="text-slate-500 text-xs mt-1">Revenue visualization will appear here</p>
               </div>
             </div>
           </div>
@@ -377,7 +419,8 @@ export default function DashboardPage() {
             <div className="flex items-center justify-center h-64 bg-slate-50 rounded-lg">
               <div className="text-center">
                 <Users className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-                <p className="text-slate-600">Charts coming in next phase</p>
+                <p className="text-slate-600 text-sm">Charts coming in next phase</p>
+                <p className="text-slate-500 text-xs mt-1">Traffic source breakdown will appear here</p>
               </div>
             </div>
           </div>

@@ -177,19 +177,6 @@ async function getRealDashboardMetrics(orgId: string) {
     _sum: { value: true }
   })
 
-  const calculateMetric = (current: any, previous: any) => {
-    const curr = Number(current._sum.value || 0)
-    const prev = Number(previous._sum.value || 0)
-    const change = prev > 0 ? ((curr - prev) / prev) * 100 : (curr > 0 ? 100 : 0)
-    
-    return {
-      current: curr,
-      previous: prev,
-      change: Math.round(change * 100) / 100,
-      trend: change > 0 ? 'up' : change < 0 ? 'down' : 'neutral'
-    }
-  }
-
   // Calculate derived metrics
   const revenueCurrent = Number(currentRevenue._sum.value || 0)
   const ordersCurrent = Number(currentOrders._sum.value || 0)
@@ -213,21 +200,35 @@ async function getRealDashboardMetrics(orgId: string) {
     revenue: calculateMetric(currentRevenue, previousRevenue),
     orders: calculateMetric(currentOrders, previousOrders),
     sessions: sessionsCurrent > 0 ? calculateMetric(currentSessions, previousSessions) : {
-      current: 0, previous: 0, change: 0, trend: 'neutral'
+      current: 0, previous: 0, change: 0, trend: 'neutral' as const
     },
     customers: calculateMetric(currentCustomers, previousCustomers),
     conversion: {
       current: Math.round(conversionCurrent * 100) / 100,
       previous: Math.round(conversionPrevious * 100) / 100,
       change: Math.round(conversionChange * 100) / 100,
-      trend: conversionChange > 0 ? 'up' : conversionChange < 0 ? 'down' : 'neutral'
+      trend: conversionChange > 0 ? 'up' as const : conversionChange < 0 ? 'down' as const : 'neutral' as const
     },
     aov: {
       current: Math.round(aovCurrent * 100) / 100,
       previous: Math.round(aovPrevious * 100) / 100,
       change: Math.round(aovChange * 100) / 100,
-      trend: aovChange > 0 ? 'up' : aovChange < 0 ? 'down' : 'neutral'
+      trend: aovChange > 0 ? 'up' as const : aovChange < 0 ? 'down' as const : 'neutral' as const
     }
+  }
+}
+
+// Helper function to calculate metrics
+function calculateMetric(current: any, previous: any) {
+  const curr = Number(current._sum?.value || 0)
+  const prev = Number(previous._sum?.value || 0)
+  const change = prev > 0 ? ((curr - prev) / prev) * 100 : (curr > 0 ? 100 : 0)
+  
+  return {
+    current: curr,
+    previous: prev,
+    change: Math.round(change * 100) / 100,
+    trend: change > 0 ? 'up' as const : change < 0 ? 'down' as const : 'neutral' as const
   }
 }
 
@@ -246,91 +247,101 @@ async function getRealChartData(orgId: string) {
     return getSampleCharts()
   }
 
-  // Revenue trend (daily) - using raw SQL for better performance
-  const revenueTrend = await prisma.$queryRaw`
-    SELECT 
-      DATE("dateRecorded") as date,
-      SUM("value") as total_revenue
-    FROM "DataPoint"
-    WHERE "integrationId" = ANY(${integrationIds})
-      AND "metricType" = 'revenue'
-      AND "dateRecorded" >= ${thirtyDaysAgo}
-    GROUP BY DATE("dateRecorded")
-    ORDER BY date ASC
-  ` as Array<{ date: Date; total_revenue: number }>
+  try {
+    // Revenue trend (daily) - using raw SQL for better performance
+    const revenueTrend = await prisma.$queryRaw`
+      SELECT 
+        DATE("dateRecorded") as date,
+        SUM("value") as total_revenue
+      FROM "DataPoint"
+      WHERE "integrationId" = ANY(${integrationIds})
+        AND "metricType" = 'revenue'
+        AND "dateRecorded" >= ${thirtyDaysAgo}
+      GROUP BY DATE("dateRecorded")
+      ORDER BY date ASC
+    ` as Array<{ date: Date; total_revenue: number }>
 
-  // Traffic sources (if available)
-  const trafficSources = await prisma.$queryRaw`
-    SELECT 
-      ("metadata"->>'source') as source,
-      SUM("value") as sessions
-    FROM "DataPoint"
-    WHERE "integrationId" = ANY(${integrationIds})
-      AND "metricType" = 'sessions'
-      AND "dateRecorded" >= ${thirtyDaysAgo}
-      AND "metadata"->>'source' IS NOT NULL
-    GROUP BY "metadata"->>'source'
-    ORDER BY sessions DESC
-    LIMIT 10
-  ` as Array<{ source: string; sessions: number }>
+    // Traffic sources (if available)
+    const trafficSources = await prisma.$queryRaw`
+      SELECT 
+        ("metadata"->>'source') as source,
+        SUM("value") as sessions
+      FROM "DataPoint"
+      WHERE "integrationId" = ANY(${integrationIds})
+        AND "metricType" = 'sessions'
+        AND "dateRecorded" >= ${thirtyDaysAgo}
+        AND "metadata"->>'source' IS NOT NULL
+      GROUP BY "metadata"->>'source'
+      ORDER BY sessions DESC
+      LIMIT 10
+    ` as Array<{ source: string; sessions: number }>
 
-  return {
-    revenue_trend: revenueTrend.map(item => ({
-      date: item.date.toISOString().split('T')[0],
-      total_revenue: Number(item.total_revenue)
-    })),
-    traffic_sources: trafficSources.map(item => ({
-      source: item.source || 'Unknown',
-      sessions: Number(item.sessions)
-    }))
+    return {
+      revenue_trend: revenueTrend.map(item => ({
+        date: item.date.toISOString().split('T')[0],
+        total_revenue: Number(item.total_revenue)
+      })),
+      traffic_sources: trafficSources.map(item => ({
+        source: item.source || 'Unknown',
+        sessions: Number(item.sessions)
+      }))
+    }
+  } catch (error) {
+    console.error('Error fetching chart data:', error)
+    return getSampleCharts()
   }
 }
 
 async function getRecentInsights(orgId: string) {
-  // Try to get existing insights first
-  let insights = await prisma.insight.findMany({
-    where: { organizationId: orgId },
-    orderBy: [
-      { impactScore: 'desc' },
-      { createdAt: 'desc' }
-    ],
-    take: 5
-  })
+  try {
+    // Try to get existing insights first
+    let insights = await prisma.insight.findMany({
+      where: { organizationId: orgId },
+      orderBy: [
+        { impactScore: 'desc' },
+        { createdAt: 'desc' }
+      ],
+      take: 5
+    })
 
-  // If no insights exist, generate them
-  if (insights.length === 0) {
-    try {
-      const { InsightsScheduler } = await import('@/lib/insights/scheduler')
-      await InsightsScheduler.generateOrganizationInsights(orgId)
-      
-      // Fetch the newly generated insights
-      insights = await prisma.insight.findMany({
-        where: { organizationId: orgId },
-        orderBy: [
-          { impactScore: 'desc' },
-          { createdAt: 'desc' }
-        ],
-        take: 5
-      })
-    } catch (error) {
-      console.error('Failed to generate insights:', error)
-      // Return empty array if generation fails
-      return []
+    // If no insights exist, generate them
+    if (insights.length === 0) {
+      try {
+        const { InsightsScheduler } = await import('@/lib/insights/scheduler')
+        await InsightsScheduler.generateOrganizationInsights(orgId)
+        
+        // Fetch the newly generated insights
+        insights = await prisma.insight.findMany({
+          where: { organizationId: orgId },
+          orderBy: [
+            { impactScore: 'desc' },
+            { createdAt: 'desc' }
+          ],
+          take: 5
+        })
+      } catch (error) {
+        console.error('Failed to generate insights:', error)
+        // Return empty array if generation fails
+        return []
+      }
     }
-  }
 
-  return insights
+    return insights
+  } catch (error) {
+    console.error('Error fetching insights:', error)
+    return []
+  }
 }
 
 // Fallback sample data when no integrations exist
 function getSampleMetrics() {
   return {
-    revenue: { current: 0, previous: 0, change: 0, trend: 'neutral' },
-    orders: { current: 0, previous: 0, change: 0, trend: 'neutral' },
-    sessions: { current: 0, previous: 0, change: 0, trend: 'neutral' },
-    customers: { current: 0, previous: 0, change: 0, trend: 'neutral' },
-    conversion: { current: 0, previous: 0, change: 0, trend: 'neutral' },
-    aov: { current: 0, previous: 0, change: 0, trend: 'neutral' }
+    revenue: { current: 45000, previous: 38000, change: 18.4, trend: 'up' as const },
+    orders: { current: 342, previous: 298, change: 14.8, trend: 'up' as const },
+    sessions: { current: 8542, previous: 7890, change: 8.3, trend: 'up' as const },
+    customers: { current: 156, previous: 142, change: 9.9, trend: 'up' as const },
+    conversion: { current: 4.0, previous: 3.8, change: 5.3, trend: 'up' as const },
+    aov: { current: 131.58, previous: 127.52, change: 3.2, trend: 'up' as const }
   }
 }
 
