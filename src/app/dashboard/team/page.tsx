@@ -1,19 +1,19 @@
+// src/app/dashboard/team/page.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { Plus, MoreVertical, Mail, Crown, Shield, Eye, Trash2, UserCheck } from 'lucide-react'
-import { toast } from 'sonner'
+import { 
+  Plus, 
+  MoreVertical, 
+  Mail, 
+  Crown, 
+  Shield, 
+  Eye, 
+  Trash2, 
+  UserCheck 
+} from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 interface TeamMember {
   id: string
@@ -45,6 +45,7 @@ export default function TeamPage() {
     email: '',
     role: 'member'
   })
+  const [activeDropdown, setActiveDropdown] = useState<string | null>(null)
 
   useEffect(() => {
     fetchTeamData()
@@ -98,7 +99,7 @@ export default function TeamPage() {
       ])
     } catch (error) {
       console.error('Failed to fetch team data:', error)
-      toast.error('Failed to load team data')
+      alert('Failed to load team data')
     } finally {
       setIsLoading(false)
     }
@@ -111,12 +112,12 @@ export default function TeamPage() {
       // Replace with actual API call
       await new Promise(resolve => setTimeout(resolve, 1000))
       
-      toast.success(`Invitation sent to ${inviteForm.email}`)
+      alert(`Invitation sent to ${inviteForm.email}`)
       setIsInviteDialogOpen(false)
       setInviteForm({ email: '', role: 'member' })
       fetchTeamData()
     } catch (error) {
-      toast.error('Failed to send invitation')
+      alert('Failed to send invitation')
     }
   }
 
@@ -129,9 +130,9 @@ export default function TeamPage() {
         member.id === memberId ? { ...member, role: newRole as any } : member
       ))
       
-      toast.success('Role updated successfully')
+      alert('Role updated successfully')
     } catch (error) {
-      toast.error('Failed to update role')
+      alert('Failed to update role')
     }
   }
 
@@ -141,9 +142,9 @@ export default function TeamPage() {
       await new Promise(resolve => setTimeout(resolve, 500))
       
       setTeamMembers(prev => prev.filter(member => member.id !== memberId))
-      toast.success('Team member removed')
+      alert('Team member removed')
     } catch (error) {
-      toast.error('Failed to remove team member')
+      alert('Failed to remove team member')
     }
   }
 
@@ -153,9 +154,9 @@ export default function TeamPage() {
       await new Promise(resolve => setTimeout(resolve, 500))
       
       setPendingInvitations(prev => prev.filter(inv => inv.id !== invitationId))
-      toast.success('Invitation cancelled')
+      alert('Invitation cancelled')
     } catch (error) {
-      toast.error('Failed to cancel invitation')
+      alert('Failed to cancel invitation')
     }
   }
 
@@ -216,256 +217,316 @@ export default function TeamPage() {
           </p>
         </div>
         
-        <Dialog open={isInviteDialogOpen} onOpenChange={setIsInviteDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Invite Member
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Invite Team Member</DialogTitle>
-              <DialogDescription>
-                Send an invitation to add a new member to your team.
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleInviteSubmit}>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email Address</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="colleague@company.com"
-                    value={inviteForm.email}
-                    onChange={(e) => setInviteForm(prev => ({ ...prev, email: e.target.value }))}
-                    required
-                  />
+        {/* Invite Dialog */}
+        <div className="relative">
+          <button
+            onClick={() => setIsInviteDialogOpen(true)}
+            className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Invite Member
+          </button>
+          
+          {isInviteDialogOpen && (
+            <div className="fixed inset-0 bg-black bg-opacity-30 z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+                <div className="mb-4">
+                  <h2 className="text-xl font-semibold">Invite Team Member</h2>
+                  <p className="text-sm text-gray-500">
+                    Send an invitation to add a new member to your team.
+                  </p>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="role">Role</Label>
-                  <Select value={inviteForm.role} onValueChange={(value) => setInviteForm(prev => ({ ...prev, role: value }))}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="viewer">Viewer - Can view data only</SelectItem>
-                      <SelectItem value="member">Member - Can view and edit</SelectItem>
-                      <SelectItem value="admin">Admin - Full access except billing</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                
+                <form onSubmit={handleInviteSubmit} className="space-y-4">
+                  <div className="space-y-2">
+                    <label htmlFor="email" className="block text-sm font-medium text-gray-700">Email Address</label>
+                    <input
+                      id="email"
+                      type="email"
+                      placeholder="colleague@company.com"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      value={inviteForm.email}
+                      onChange={(e) => setInviteForm(prev => ({ ...prev, email: e.target.value }))}
+                      required
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <label htmlFor="role" className="block text-sm font-medium text-gray-700">Role</label>
+                    <select 
+                      id="role"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      value={inviteForm.role}
+                      onChange={(e) => setInviteForm(prev => ({ ...prev, role: e.target.value }))}
+                    >
+                      <option value="viewer">Viewer - Can view data only</option>
+                      <option value="member">Member - Can view and edit</option>
+                      <option value="admin">Admin - Full access except billing</option>
+                    </select>
+                  </div>
+                  
+                  <div className="flex justify-end space-x-3 pt-4">
+                    <button
+                      type="button"
+                      onClick={() => setIsInviteDialogOpen(false)}
+                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                    >
+                      Send Invitation
+                    </button>
+                  </div>
+                </form>
               </div>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setIsInviteDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit">Send Invitation</Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Team Members */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Team Members</CardTitle>
-          <CardDescription>
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-900">Team Members</h2>
+          <p className="text-sm text-gray-500">
             {teamMembers.length} active member{teamMembers.length !== 1 ? 's' : ''}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Member</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Last Active</TableHead>
-                <TableHead>Joined</TableHead>
-                <TableHead className="w-[50px]"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+          </p>
+        </div>
+        
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Member</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Active</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Joined</th>
+                <th scope="col" className="relative px-6 py-3 w-[50px]">
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
               {teamMembers.map((member) => (
-                <TableRow key={member.id}>
-                  <TableCell>
+                <tr key={member.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center space-x-3">
-                      <Avatar>
-                        <AvatarImage src={member.avatar} />
-                        <AvatarFallback>
-                          {member.name.split(' ').map(n => n[0]).join('')}
-                        </AvatarFallback>
-                      </Avatar>
+                      <div className="h-10 w-10 flex-shrink-0">
+                        {member.avatar ? (
+                          <img 
+                            className="h-10 w-10 rounded-full object-cover" 
+                            src={member.avatar} 
+                            alt={member.name} 
+                          />
+                        ) : (
+                          <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-500">
+                            {member.name.split(' ').map(n => n[0]).join('')}
+                          </div>
+                        )}
+                      </div>
                       <div>
-                        <div className="font-medium">{member.name}</div>
+                        <div className="font-medium text-gray-900">{member.name}</div>
                         <div className="text-sm text-gray-500">{member.email}</div>
                       </div>
                     </div>
-                  </TableCell>
-                  <TableCell>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center space-x-2">
                       {getRoleIcon(member.role)}
-                      <Badge className={getRoleBadgeColor(member.role)}>
+                      <span className={cn(
+                        "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
+                        getRoleBadgeColor(member.role)
+                      )}>
                         {member.role}
-                      </Badge>
+                      </span>
                     </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={member.status === 'active' ? 'default' : 'secondary'}>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={cn(
+                      "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
+                      member.status === 'active' ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"
+                    )}>
                       {member.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-sm text-gray-500">
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {member.lastActive}
-                  </TableCell>
-                  <TableCell className="text-sm text-gray-500">
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {new Date(member.joinedAt).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     {member.role !== 'owner' && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm">
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleRoleChange(member.id, 'admin')}>
-                            Change to Admin
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleRoleChange(member.id, 'member')}>
-                            Change to Member
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleRoleChange(member.id, 'viewer')}>
-                            Change to Viewer
-                          </DropdownMenuItem>
-                          <DropdownMenuItem 
-                            className="text-red-600"
-                            onClick={() => handleRemoveMember(member.id)}
-                          >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Remove Member
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          className="text-gray-400 hover:text-gray-500 focus:outline-none"
+                          onClick={() => setActiveDropdown(activeDropdown === member.id ? null : member.id)}
+                        >
+                          <MoreVertical className="h-5 w-5" />
+                        </button>
+                        
+                        {activeDropdown === member.id && (
+                          <div className="absolute right-0 z-10 mt-1 w-48 rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+                            <div className="py-1">
+                              <button
+                                onClick={() => handleRoleChange(member.id, 'admin')}
+                                className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                              >
+                                Change to Admin
+                              </button>
+                              <button
+                                onClick={() => handleRoleChange(member.id, 'member')}
+                                className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                              >
+                                Change to Member
+                              </button>
+                              <button
+                                onClick={() => handleRoleChange(member.id, 'viewer')}
+                                className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                              >
+                                Change to Viewer
+                              </button>
+                              <button
+                                className="block w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-gray-100"
+                                onClick={() => handleRemoveMember(member.id)}
+                              >
+                                <div className="flex items-center">
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Remove Member
+                                </div>
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     )}
-                  </TableCell>
-                </TableRow>
+                  </td>
+                </tr>
               ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       {/* Pending Invitations */}
       {pendingInvitations.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Pending Invitations</CardTitle>
-            <CardDescription>
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h2 className="text-lg font-semibold text-gray-900">Pending Invitations</h2>
+            <p className="text-sm text-gray-500">
               {pendingInvitations.length} pending invitation{pendingInvitations.length !== 1 ? 's' : ''}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Invited By</TableHead>
-                  <TableHead>Expires</TableHead>
-                  <TableHead className="w-[50px]"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            </p>
+          </div>
+          
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Invited By</th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Expires</th>
+                  <th scope="col" className="relative px-6 py-3 w-[50px]">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
                 {pendingInvitations.map((invitation) => (
-                  <TableRow key={invitation.id}>
-                    <TableCell>
+                  <tr key={invitation.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center space-x-2">
                         <Mail className="h-4 w-4 text-gray-400" />
                         <span>{invitation.email}</span>
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={getRoleBadgeColor(invitation.role)}>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={cn(
+                        "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
+                        getRoleBadgeColor(invitation.role)
+                      )}>
                         {invitation.role}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-gray-500">
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {invitation.invitedBy}
-                    </TableCell>
-                    <TableCell className="text-sm text-gray-500">
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {new Date(invitation.expiresAt).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell>
-                      <Button 
-                        variant="ghost" 
-                        size="sm"
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <button
                         onClick={() => handleCancelInvitation(invitation.id)}
+                        className="text-gray-400 hover:text-red-500"
+                        title="Cancel invitation"
                       >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
+                        <Trash2 className="h-5 w-5" />
+                      </button>
+                    </td>
+                  </tr>
                 ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
 
       {/* Team Permissions Info */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Permission Levels</CardTitle>
-          <CardDescription>
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-900">Permission Levels</h2>
+          <p className="text-sm text-gray-500">
             Understanding team member roles and permissions
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="flex items-start space-x-3">
-              <Crown className="h-5 w-5 text-yellow-500 mt-0.5" />
-              <div>
-                <div className="font-medium">Owner</div>
-                <div className="text-sm text-gray-600">
-                  Full access to all features, billing, and team management
-                </div>
-              </div>
-            </div>
-            <div className="flex items-start space-x-3">
-              <Shield className="h-5 w-5 text-blue-500 mt-0.5" />
-              <div>
-                <div className="font-medium">Admin</div>
-                <div className="text-sm text-gray-600">
-                  Can manage team members, integrations, and all data
-                </div>
-              </div>
-            </div>
-            <div className="flex items-start space-x-3">
-              <UserCheck className="h-5 w-5 text-green-500 mt-0.5" />
-              <div>
-                <div className="font-medium">Member</div>
-                <div className="text-sm text-gray-600">
-                  Can view and edit data, create reports and insights
-                </div>
-              </div>
-            </div>
-            <div className="flex items-start space-x-3">
-              <Eye className="h-5 w-5 text-gray-500 mt-0.5" />
-              <div>
-                <div className="font-medium">Viewer</div>
-                <div className="text-sm text-gray-600">
-                  Read-only access to dashboards and reports
-                </div>
+          </p>
+        </div>
+        
+        <div className="p-6 space-y-4">
+          <div className="flex items-start space-x-3">
+            <Crown className="h-5 w-5 text-yellow-500 mt-0.5" />
+            <div>
+              <div className="font-medium text-gray-900">Owner</div>
+              <div className="text-sm text-gray-600">
+                Full access to all features, billing, and team management
               </div>
             </div>
           </div>
-        </CardContent>
-      </Card>
+          
+          <div className="flex items-start space-x-3">
+            <Shield className="h-5 w-5 text-blue-500 mt-0.5" />
+            <div>
+              <div className="font-medium text-gray-900">Admin</div>
+              <div className="text-sm text-gray-600">
+                Can manage team members, integrations, and all data
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex items-start space-x-3">
+            <UserCheck className="h-5 w-5 text-green-500 mt-0.5" />
+            <div>
+              <div className="font-medium text-gray-900">Member</div>
+              <div className="text-sm text-gray-600">
+                Can view and edit data, create reports and insights
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex items-start space-x-3">
+            <Eye className="h-5 w-5 text-gray-500 mt-0.5" />
+            <div>
+              <div className="font-medium text-gray-900">Viewer</div>
+              <div className="text-sm text-gray-600">
+                Read-only access to dashboards and reports
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

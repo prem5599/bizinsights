@@ -1,19 +1,8 @@
+// src/app/dashboard/settings/page.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
-import { Separator } from '@/components/ui/separator'
-import { Badge } from '@/components/ui/badge'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { 
   Building2, 
   Bell, 
@@ -31,6 +20,7 @@ import {
   Lock
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 
 interface OrganizationSettings {
   name: string
@@ -113,7 +103,8 @@ export default function SettingsPage() {
       })
     } catch (error) {
       console.error('Failed to fetch settings:', error)
-      toast.error('Failed to load settings')
+      // In a real app we'd use the toast library here
+      console.log('Failed to load settings')
     } finally {
       setIsLoading(false)
     }
@@ -124,9 +115,9 @@ export default function SettingsPage() {
       setIsSaving(true)
       // Replace with actual API call
       await new Promise(resolve => setTimeout(resolve, 1000))
-      toast.success('Organization settings saved')
+      console.log('Organization settings saved')
     } catch (error) {
-      toast.error('Failed to save settings')
+      console.log('Failed to save settings')
     } finally {
       setIsSaving(false)
     }
@@ -137,9 +128,9 @@ export default function SettingsPage() {
       setIsSaving(true)
       // Replace with actual API call
       await new Promise(resolve => setTimeout(resolve, 1000))
-      toast.success('Notification preferences saved')
+      console.log('Notification preferences saved')
     } catch (error) {
-      toast.error('Failed to save notification settings')
+      console.log('Failed to save notification settings')
     } finally {
       setIsSaving(false)
     }
@@ -150,9 +141,9 @@ export default function SettingsPage() {
       setIsSaving(true)
       // Replace with actual API call
       await new Promise(resolve => setTimeout(resolve, 1000))
-      toast.success('Security settings saved')
+      console.log('Security settings saved')
     } catch (error) {
-      toast.error('Failed to save security settings')
+      console.log('Failed to save security settings')
     } finally {
       setIsSaving(false)
     }
@@ -162,10 +153,10 @@ export default function SettingsPage() {
     try {
       // Replace with actual API call
       await new Promise(resolve => setTimeout(resolve, 1000))
-      toast.success('Organization deleted')
+      console.log('Organization deleted')
       setIsDeleteDialogOpen(false)
     } catch (error) {
-      toast.error('Failed to delete organization')
+      console.log('Failed to delete organization')
     }
   }
 
@@ -181,9 +172,9 @@ export default function SettingsPage() {
       await new Promise(resolve => setTimeout(resolve, 1000))
       
       setOrgSettings(prev => ({ ...prev, logo: URL.createObjectURL(file) }))
-      toast.success('Logo uploaded successfully')
+      console.log('Logo uploaded successfully')
     } catch (error) {
-      toast.error('Failed to upload logo')
+      console.log('Failed to upload logo')
     }
   }
 
@@ -217,51 +208,60 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="organization" className="flex items-center space-x-2">
-            <Building2 className="h-4 w-4" />
-            <span>Organization</span>
-          </TabsTrigger>
-          <TabsTrigger value="notifications" className="flex items-center space-x-2">
-            <Bell className="h-4 w-4" />
-            <span>Notifications</span>
-          </TabsTrigger>
-          <TabsTrigger value="security" className="flex items-center space-x-2">
-            <Shield className="h-4 w-4" />
-            <span>Security</span>
-          </TabsTrigger>
-          <TabsTrigger value="billing" className="flex items-center space-x-2">
-            <CreditCard className="h-4 w-4" />
-            <span>Billing</span>
-          </TabsTrigger>
-        </TabsList>
+      {/* Tabs */}
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+          {[
+            { id: 'organization', icon: <Building2 className="h-4 w-4 mr-2" />, label: 'Organization' },
+            { id: 'notifications', icon: <Bell className="h-4 w-4 mr-2" />, label: 'Notifications' },
+            { id: 'security', icon: <Shield className="h-4 w-4 mr-2" />, label: 'Security' },
+            { id: 'billing', icon: <CreditCard className="h-4 w-4 mr-2" />, label: 'Billing' }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                "flex items-center whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm",
+                activeTab === tab.id
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+              )}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+      </div>
 
+      {/* Content based on active tab */}
+      <div className="space-y-6">
         {/* Organization Settings */}
-        <TabsContent value="organization" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Organization Information</CardTitle>
-              <CardDescription>
+        {activeTab === 'organization' && (
+          <div className="bg-white shadow-sm rounded-lg border border-gray-200">
+            <div className="px-4 py-5 sm:p-6">
+              <h3 className="text-lg font-medium leading-6 text-gray-900">Organization Information</h3>
+              <p className="mt-1 text-sm text-gray-500">
                 Update your organization's basic information and branding
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
+              </p>
+            </div>
+            <div className="border-t border-gray-200 px-4 py-5 sm:p-6 space-y-6">
               {/* Logo Upload */}
               <div className="flex items-center space-x-4">
-                <Avatar className="h-20 w-20">
-                  <AvatarImage src={orgSettings.logo} />
-                  <AvatarFallback>
-                    <Building2 className="h-8 w-8" />
-                  </AvatarFallback>
-                </Avatar>
+                <div className="h-20 w-20 rounded-full overflow-hidden bg-gray-100 flex items-center justify-center">
+                  {orgSettings.logo ? (
+                    <img src={orgSettings.logo} alt="Organization logo" className="h-full w-full object-cover" />
+                  ) : (
+                    <Building2 className="h-8 w-8 text-gray-400" />
+                  )}
+                </div>
                 <div>
-                  <Label htmlFor="logo" className="cursor-pointer">
+                  <label htmlFor="logo" className="cursor-pointer">
                     <div className="flex items-center space-x-2 text-sm font-medium text-blue-600 hover:text-blue-500">
                       <Upload className="h-4 w-4" />
                       <span>Upload Logo</span>
                     </div>
-                  </Label>
+                  </label>
                   <input
                     id="logo"
                     type="file"
@@ -275,22 +275,26 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <Separator />
+              <hr className="border-gray-200" />
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="org-name">Organization Name</Label>
-                  <Input
+                  <label htmlFor="org-name" className="block text-sm font-medium text-gray-700">Organization Name</label>
+                  <input
                     id="org-name"
+                    type="text"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                     value={orgSettings.name}
                     onChange={(e) => setOrgSettings(prev => ({ ...prev, name: e.target.value }))}
                     placeholder="Your Company Name"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="org-slug">URL Slug</Label>
-                  <Input
+                  <label htmlFor="org-slug" className="block text-sm font-medium text-gray-700">URL Slug</label>
+                  <input
                     id="org-slug"
+                    type="text"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                     value={orgSettings.slug}
                     onChange={(e) => setOrgSettings(prev => ({ ...prev, slug: e.target.value }))}
                     placeholder="your-company"
@@ -302,83 +306,92 @@ export default function SettingsPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea
+                <label htmlFor="description" className="block text-sm font-medium text-gray-700">Description</label>
+                <textarea
                   id="description"
+                  rows={3}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                   value={orgSettings.description}
                   onChange={(e) => setOrgSettings(prev => ({ ...prev, description: e.target.value }))}
                   placeholder="Brief description of your organization"
-                  rows={3}
                 />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="website">Website</Label>
-                  <Input
+                  <label htmlFor="website" className="block text-sm font-medium text-gray-700">Website</label>
+                  <input
                     id="website"
                     type="url"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                     value={orgSettings.website}
                     onChange={(e) => setOrgSettings(prev => ({ ...prev, website: e.target.value }))}
                     placeholder="https://yourcompany.com"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="industry">Industry</Label>
-                  <Select value={orgSettings.industry} onValueChange={(value) => setOrgSettings(prev => ({ ...prev, industry: value }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select industry" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="technology">Technology</SelectItem>
-                      <SelectItem value="retail">Retail</SelectItem>
-                      <SelectItem value="healthcare">Healthcare</SelectItem>
-                      <SelectItem value="finance">Finance</SelectItem>
-                      <SelectItem value="education">Education</SelectItem>
-                      <SelectItem value="manufacturing">Manufacturing</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <label htmlFor="industry" className="block text-sm font-medium text-gray-700">Industry</label>
+                  <select
+                    id="industry"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    value={orgSettings.industry}
+                    onChange={(e) => setOrgSettings(prev => ({ ...prev, industry: e.target.value }))}
+                  >
+                    <option value="">Select industry</option>
+                    <option value="technology">Technology</option>
+                    <option value="retail">Retail</option>
+                    <option value="healthcare">Healthcare</option>
+                    <option value="finance">Finance</option>
+                    <option value="education">Education</option>
+                    <option value="manufacturing">Manufacturing</option>
+                    <option value="other">Other</option>
+                  </select>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="company-size">Company Size</Label>
-                  <Select value={orgSettings.size} onValueChange={(value) => setOrgSettings(prev => ({ ...prev, size: value }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select company size" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="1-10">1-10 employees</SelectItem>
-                      <SelectItem value="11-50">11-50 employees</SelectItem>
-                      <SelectItem value="51-200">51-200 employees</SelectItem>
-                      <SelectItem value="201-500">201-500 employees</SelectItem>
-                      <SelectItem value="500+">500+ employees</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <label htmlFor="company-size" className="block text-sm font-medium text-gray-700">Company Size</label>
+                  <select
+                    id="company-size"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    value={orgSettings.size}
+                    onChange={(e) => setOrgSettings(prev => ({ ...prev, size: e.target.value }))}
+                  >
+                    <option value="">Select company size</option>
+                    <option value="1-10">1-10 employees</option>
+                    <option value="11-50">11-50 employees</option>
+                    <option value="51-200">51-200 employees</option>
+                    <option value="201-500">201-500 employees</option>
+                    <option value="500+">500+ employees</option>
+                  </select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="timezone">Timezone</Label>
-                  <Select value={orgSettings.timezone} onValueChange={(value) => setOrgSettings(prev => ({ ...prev, timezone: value }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select timezone" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="America/New_York">Eastern Time (EST)</SelectItem>
-                      <SelectItem value="America/Chicago">Central Time (CST)</SelectItem>
-                      <SelectItem value="America/Denver">Mountain Time (MST)</SelectItem>
-                      <SelectItem value="America/Los_Angeles">Pacific Time (PST)</SelectItem>
-                      <SelectItem value="Europe/London">London (GMT)</SelectItem>
-                      <SelectItem value="Europe/Paris">Paris (CET)</SelectItem>
-                      <SelectItem value="Asia/Tokyo">Tokyo (JST)</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <label htmlFor="timezone" className="block text-sm font-medium text-gray-700">Timezone</label>
+                  <select
+                    id="timezone"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    value={orgSettings.timezone}
+                    onChange={(e) => setOrgSettings(prev => ({ ...prev, timezone: e.target.value }))}
+                  >
+                    <option value="">Select timezone</option>
+                    <option value="America/New_York">Eastern Time (EST)</option>
+                    <option value="America/Chicago">Central Time (CST)</option>
+                    <option value="America/Denver">Mountain Time (MST)</option>
+                    <option value="America/Los_Angeles">Pacific Time (PST)</option>
+                    <option value="Europe/London">London (GMT)</option>
+                    <option value="Europe/Paris">Paris (CET)</option>
+                    <option value="Asia/Tokyo">Tokyo (JST)</option>
+                  </select>
                 </div>
               </div>
 
               <div className="flex justify-end">
-                <Button onClick={handleSaveOrganization} disabled={isSaving}>
+                <button
+                  onClick={handleSaveOrganization}
+                  disabled={isSaving}
+                  className="inline-flex justify-center items-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
                   {isSaving ? (
                     <>
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
@@ -390,97 +403,196 @@ export default function SettingsPage() {
                       Save Changes
                     </>
                   )}
-                </Button>
+                </button>
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+            </div>
+          </div>
+        )}
 
         {/* Notification Settings */}
-        <TabsContent value="notifications" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Email Notifications</CardTitle>
-              <CardDescription>
+        {activeTab === 'notifications' && (
+          <div className="bg-white shadow-sm rounded-lg border border-gray-200">
+            <div className="px-4 py-5 sm:p-6">
+              <h3 className="text-lg font-medium leading-6 text-gray-900">Email Notifications</h3>
+              <p className="mt-1 text-sm text-gray-500">
                 Configure when and how you receive email notifications
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
+              </p>
+            </div>
+            <div className="border-t border-gray-200 px-4 py-5 sm:p-6 space-y-6">
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <Label className="text-base">Weekly Reports</Label>
+                    <label className="text-base font-medium text-gray-900">Weekly Reports</label>
                     <p className="text-sm text-gray-500">
                       Receive weekly performance summaries every Monday
                     </p>
                   </div>
-                  <Switch
-                    checked={notifications.weeklyDigest}
-                    onCheckedChange={(checked) => setNotifications(prev => ({ ...prev, weeklyDigest: checked }))}
-                  />
+                  <div className="relative inline-block w-10 mr-2 align-middle select-none">
+                    <input 
+                      type="checkbox" 
+                      id="weekly-digest"
+                      checked={notifications.weeklyDigest}
+                      onChange={(e) => setNotifications(prev => ({ ...prev, weeklyDigest: e.target.checked }))}
+                      className="sr-only"
+                    />
+                    <label
+                      htmlFor="weekly-digest"
+                      className={cn(
+                        "block overflow-hidden h-6 rounded-full cursor-pointer transition-colors duration-200 ease-in-out",
+                        notifications.weeklyDigest ? "bg-blue-600" : "bg-gray-200"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "block h-6 w-6 rounded-full bg-white shadow transform transition-transform duration-200 ease-in-out",
+                          notifications.weeklyDigest ? "translate-x-4" : "translate-x-0"
+                        )}
+                      ></span>
+                    </label>
+                  </div>
                 </div>
                 
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <Label className="text-base">Monthly Reports</Label>
+                    <label className="text-base font-medium text-gray-900">Monthly Reports</label>
                     <p className="text-sm text-gray-500">
                       Comprehensive monthly business insights
                     </p>
                   </div>
-                  <Switch
-                    checked={notifications.monthlyReports}
-                    onCheckedChange={(checked) => setNotifications(prev => ({ ...prev, monthlyReports: checked }))}
-                  />
+                  <div className="relative inline-block w-10 mr-2 align-middle select-none">
+                    <input 
+                      type="checkbox" 
+                      id="monthly-reports"
+                      checked={notifications.monthlyReports}
+                      onChange={(e) => setNotifications(prev => ({ ...prev, monthlyReports: e.target.checked }))}
+                      className="sr-only"
+                    />
+                    <label
+                      htmlFor="monthly-reports"
+                      className={cn(
+                        "block overflow-hidden h-6 rounded-full cursor-pointer transition-colors duration-200 ease-in-out",
+                        notifications.monthlyReports ? "bg-blue-600" : "bg-gray-200"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "block h-6 w-6 rounded-full bg-white shadow transform transition-transform duration-200 ease-in-out",
+                          notifications.monthlyReports ? "translate-x-4" : "translate-x-0"
+                        )}
+                      ></span>
+                    </label>
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <Label className="text-base">Anomaly Alerts</Label>
+                    <label className="text-base font-medium text-gray-900">Anomaly Alerts</label>
                     <p className="text-sm text-gray-500">
                       Get notified when unusual patterns are detected
                     </p>
                   </div>
-                  <Switch
-                    checked={notifications.anomalyAlerts}
-                    onCheckedChange={(checked) => setNotifications(prev => ({ ...prev, anomalyAlerts: checked }))}
-                  />
+                  <div className="relative inline-block w-10 mr-2 align-middle select-none">
+                    <input 
+                      type="checkbox" 
+                      id="anomaly-alerts"
+                      checked={notifications.anomalyAlerts}
+                      onChange={(e) => setNotifications(prev => ({ ...prev, anomalyAlerts: e.target.checked }))}
+                      className="sr-only"
+                    />
+                    <label
+                      htmlFor="anomaly-alerts"
+                      className={cn(
+                        "block overflow-hidden h-6 rounded-full cursor-pointer transition-colors duration-200 ease-in-out",
+                        notifications.anomalyAlerts ? "bg-blue-600" : "bg-gray-200"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "block h-6 w-6 rounded-full bg-white shadow transform transition-transform duration-200 ease-in-out",
+                          notifications.anomalyAlerts ? "translate-x-4" : "translate-x-0"
+                        )}
+                      ></span>
+                    </label>
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <Label className="text-base">Team Updates</Label>
+                    <label className="text-base font-medium text-gray-900">Team Updates</label>
                     <p className="text-sm text-gray-500">
                       Notifications about team member activity
                     </p>
                   </div>
-                  <Switch
-                    checked={notifications.teamUpdates}
-                    onCheckedChange={(checked) => setNotifications(prev => ({ ...prev, teamUpdates: checked }))}
-                  />
+                  <div className="relative inline-block w-10 mr-2 align-middle select-none">
+                    <input 
+                      type="checkbox" 
+                      id="team-updates"
+                      checked={notifications.teamUpdates}
+                      onChange={(e) => setNotifications(prev => ({ ...prev, teamUpdates: e.target.checked }))}
+                      className="sr-only"
+                    />
+                    <label
+                      htmlFor="team-updates"
+                      className={cn(
+                        "block overflow-hidden h-6 rounded-full cursor-pointer transition-colors duration-200 ease-in-out",
+                        notifications.teamUpdates ? "bg-blue-600" : "bg-gray-200"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "block h-6 w-6 rounded-full bg-white shadow transform transition-transform duration-200 ease-in-out",
+                          notifications.teamUpdates ? "translate-x-4" : "translate-x-0"
+                        )}
+                      ></span>
+                    </label>
+                  </div>
                 </div>
               </div>
 
-              <Separator />
+              <hr className="border-gray-200" />
 
               <div className="space-y-4">
-                <h4 className="text-sm font-medium">Integration Notifications</h4>
+                <h4 className="text-sm font-medium text-gray-900">Integration Notifications</h4>
                 
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <Label className="text-base">Slack Notifications</Label>
+                    <label className="text-base font-medium text-gray-900">Slack Notifications</label>
                     <p className="text-sm text-gray-500">
                       Send alerts to your Slack workspace
                     </p>
                   </div>
-                  <Switch
-                    checked={notifications.slackNotifications}
-                    onCheckedChange={(checked) => setNotifications(prev => ({ ...prev, slackNotifications: checked }))}
-                  />
+                  <div className="relative inline-block w-10 mr-2 align-middle select-none">
+                    <input 
+                      type="checkbox" 
+                      id="slack-notifications"
+                      checked={notifications.slackNotifications}
+                      onChange={(e) => setNotifications(prev => ({ ...prev, slackNotifications: e.target.checked }))}
+                      className="sr-only"
+                    />
+                    <label
+                      htmlFor="slack-notifications"
+                      className={cn(
+                        "block overflow-hidden h-6 rounded-full cursor-pointer transition-colors duration-200 ease-in-out",
+                        notifications.slackNotifications ? "bg-blue-600" : "bg-gray-200"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "block h-6 w-6 rounded-full bg-white shadow transform transition-transform duration-200 ease-in-out",
+                          notifications.slackNotifications ? "translate-x-4" : "translate-x-0"
+                        )}
+                      ></span>
+                    </label>
+                  </div>
                 </div>
               </div>
 
               <div className="flex justify-end">
-                <Button onClick={handleSaveNotifications} disabled={isSaving}>
+                <button
+                  onClick={handleSaveNotifications}
+                  disabled={isSaving}
+                  className="inline-flex justify-center items-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
                   {isSaving ? (
                     <>
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
@@ -492,61 +604,77 @@ export default function SettingsPage() {
                       Save Preferences
                     </>
                   )}
-                </Button>
+                </button>
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+            </div>
+          </div>
+        )}
 
         {/* Security Settings */}
-        <TabsContent value="security" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Security & Access</CardTitle>
-              <CardDescription>
+        {activeTab === 'security' && (
+          <div className="bg-white shadow-sm rounded-lg border border-gray-200">
+            <div className="px-4 py-5 sm:p-6">
+              <h3 className="text-lg font-medium leading-6 text-gray-900">Security & Access</h3>
+              <p className="mt-1 text-sm text-gray-500">
                 Manage your account security and access controls
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
+              </p>
+            </div>
+            <div className="border-t border-gray-200 px-4 py-5 sm:p-6 space-y-6">
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <Label className="text-base">Two-Factor Authentication</Label>
+                    <label className="text-base font-medium text-gray-900">Two-Factor Authentication</label>
                     <p className="text-sm text-gray-500">
                       Add an extra layer of security to your account
                     </p>
                   </div>
                   <div className="flex items-center space-x-2">
                     {security.twoFactorEnabled && (
-                      <Badge variant="secondary" className="text-green-600 bg-green-50">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                         <Check className="h-3 w-3 mr-1" />
                         Enabled
-                      </Badge>
+                      </span>
                     )}
-                    <Switch
-                      checked={security.twoFactorEnabled}
-                      onCheckedChange={(checked) => setSecurity(prev => ({ ...prev, twoFactorEnabled: checked }))}
-                    />
+                    <div className="relative inline-block w-10 mr-2 align-middle select-none">
+                      <input 
+                        type="checkbox" 
+                        id="two-factor"
+                        checked={security.twoFactorEnabled}
+                        onChange={(e) => setSecurity(prev => ({ ...prev, twoFactorEnabled: e.target.checked }))}
+                        className="sr-only"
+                      />
+                      <label
+                        htmlFor="two-factor"
+                        className={cn(
+                          "block overflow-hidden h-6 rounded-full cursor-pointer transition-colors duration-200 ease-in-out",
+                          security.twoFactorEnabled ? "bg-blue-600" : "bg-gray-200"
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "block h-6 w-6 rounded-full bg-white shadow transform transition-transform duration-200 ease-in-out",
+                            security.twoFactorEnabled ? "translate-x-4" : "translate-x-0"
+                          )}
+                        ></span>
+                      </label>
+                    </div>
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="session-timeout">Session Timeout</Label>
-                  <Select 
-                    value={security.sessionTimeout.toString()} 
-                    onValueChange={(value) => setSecurity(prev => ({ ...prev, sessionTimeout: parseInt(value) }))}
+                  <label htmlFor="session-timeout" className="block text-sm font-medium text-gray-700">Session Timeout</label>
+                  <select
+                    id="session-timeout"
+                    className="mt-1 block w-48 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    value={security.sessionTimeout.toString()}
+                    onChange={(e) => setSecurity(prev => ({ ...prev, sessionTimeout: parseInt(e.target.value) }))}
                   >
-                    <SelectTrigger className="w-48">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="1">1 hour</SelectItem>
-                      <SelectItem value="8">8 hours</SelectItem>
-                      <SelectItem value="24">24 hours</SelectItem>
-                      <SelectItem value="168">7 days</SelectItem>
-                      <SelectItem value="720">30 days</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    <option value="1">1 hour</option>
+                    <option value="8">8 hours</option>
+                    <option value="24">24 hours</option>
+                    <option value="168">7 days</option>
+                    <option value="720">30 days</option>
+                  </select>
                   <p className="text-xs text-gray-500">
                     Automatically log out users after period of inactivity
                   </p>
@@ -554,32 +682,54 @@ export default function SettingsPage() {
 
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <Label className="text-base">Automatic API Key Rotation</Label>
+                    <label className="text-base font-medium text-gray-900">Automatic API Key Rotation</label>
                     <p className="text-sm text-gray-500">
                       Rotate API keys automatically every 90 days
                     </p>
                   </div>
-                  <Switch
-                    checked={security.apiKeyRotation}
-                    onCheckedChange={(checked) => setSecurity(prev => ({ ...prev, apiKeyRotation: checked }))}
-                  />
+                  <div className="relative inline-block w-10 mr-2 align-middle select-none">
+                    <input 
+                      type="checkbox" 
+                      id="api-key-rotation"
+                      checked={security.apiKeyRotation}
+                      onChange={(e) => setSecurity(prev => ({ ...prev, apiKeyRotation: e.target.checked }))}
+                      className="sr-only"
+                    />
+                    <label
+                      htmlFor="api-key-rotation"
+                      className={cn(
+                        "block overflow-hidden h-6 rounded-full cursor-pointer transition-colors duration-200 ease-in-out",
+                        security.apiKeyRotation ? "bg-blue-600" : "bg-gray-200"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "block h-6 w-6 rounded-full bg-white shadow transform transition-transform duration-200 ease-in-out",
+                          security.apiKeyRotation ? "translate-x-4" : "translate-x-0"
+                        )}
+                      ></span>
+                    </label>
+                  </div>
                 </div>
               </div>
 
-              <Separator />
+              <hr className="border-gray-200" />
 
               <div className="space-y-4">
-                <h4 className="text-sm font-medium">API Access</h4>
+                <h4 className="text-sm font-medium text-gray-900">API Access</h4>
                 <div className="bg-gray-50 p-4 rounded-lg">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium">Current API Key</span>
-                    <Button variant="outline" size="sm">
+                    <span className="text-sm font-medium text-gray-900">Current API Key</span>
+                    <button
+                      type="button"
+                      className="inline-flex items-center px-2.5 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    >
                       Regenerate
-                    </Button>
+                    </button>
                   </div>
-                  <code className="text-xs bg-white p-2 rounded border block">
-                    biz_sk_test_1234...7890
-                  </code>
+                  <div className="bg-white p-2 rounded border block">
+                    <code className="text-xs">biz_sk_test_1234...7890</code>
+                  </div>
                   <p className="text-xs text-gray-500 mt-2">
                     Last used: 2 hours ago
                   </p>
@@ -587,7 +737,11 @@ export default function SettingsPage() {
               </div>
 
               <div className="flex justify-end">
-                <Button onClick={handleSaveSecurity} disabled={isSaving}>
+                <button
+                  onClick={handleSaveSecurity}
+                  disabled={isSaving}
+                  className="inline-flex justify-center items-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
                   {isSaving ? (
                     <>
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
@@ -599,198 +753,247 @@ export default function SettingsPage() {
                       Save Security Settings
                     </>
                   )}
-                </Button>
+                </button>
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+            </div>
+          </div>
+        )}
 
         {/* Billing Settings */}
-        <TabsContent value="billing" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Subscription & Billing</CardTitle>
-              <CardDescription>
-                Manage your subscription plan and billing information
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Current Plan */}
-              <div className="border rounded-lg p-4">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="text-lg font-semibold">Pro Plan</h3>
-                    <p className="text-sm text-gray-600">
-                      Perfect for growing businesses
-                    </p>
-                  </div>
-                  <Badge className="bg-blue-100 text-blue-800">Current Plan</Badge>
-                </div>
-                
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                  <div>
-                    <p className="text-sm text-gray-500">Price</p>
-                    <p className="font-semibold">$29/month</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Data Sources</p>
-                    <p className="font-semibold">3 integrations</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Team Members</p>
-                    <p className="font-semibold">Up to 5 users</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Next Billing</p>
-                    <p className="font-semibold">Aug 10, 2025</p>
-                  </div>
-                </div>
-
-                <div className="flex space-x-2">
-                  <Button variant="outline">Change Plan</Button>
-                  <Button variant="outline">Manage Billing</Button>
-                </div>
+        {activeTab === 'billing' && (
+          <>
+            <div className="bg-white shadow-sm rounded-lg border border-gray-200">
+              <div className="px-4 py-5 sm:p-6">
+                <h3 className="text-lg font-medium leading-6 text-gray-900">Subscription & Billing</h3>
+                <p className="mt-1 text-sm text-gray-500">
+                  Manage your subscription plan and billing information
+                </p>
               </div>
-
-              {/* Usage */}
-              <div className="space-y-4">
-                <h4 className="text-sm font-medium">Current Usage</h4>
-                
-                <div className="space-y-3">
-                  <div>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span>Data Sources</span>
-                      <span>2 of 3 used</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div className="bg-blue-600 h-2 rounded-full" style={{ width: '66%' }}></div>
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span>Team Members</span>
-                      <span>3 of 5 used</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div className="bg-green-600 h-2 rounded-full" style={{ width: '60%' }}></div>
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span>API Calls</span>
-                      <span>8,432 of 50,000 used</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div className="bg-yellow-600 h-2 rounded-full" style={{ width: '17%' }}></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Payment Method */}
-              <div className="space-y-4">
-                <h4 className="text-sm font-medium">Payment Method</h4>
+              <div className="border-t border-gray-200 px-4 py-5 sm:p-6 space-y-6">
+                {/* Current Plan */}
                 <div className="border rounded-lg p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <CreditCard className="h-8 w-8 text-gray-400" />
-                      <div>
-                        <p className="font-medium">•••• •••• •••• 4242</p>
-                        <p className="text-sm text-gray-500">Expires 12/27</p>
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Pro Plan</h3>
+                      <p className="text-sm text-gray-600">
+                        Perfect for growing businesses
+                      </p>
+                    </div>
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                      Current Plan
+                    </span>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                    <div>
+                      <p className="text-sm text-gray-500">Price</p>
+                      <p className="font-semibold">$29/month</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500">Data Sources</p>
+                      <p className="font-semibold">3 integrations</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500">Team Members</p>
+                      <p className="font-semibold">Up to 5 users</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500">Next Billing</p>
+                      <p className="font-semibold">Aug 10, 2025</p>
+                    </div>
+                  </div>
+
+                  <div className="flex space-x-2">
+                    <button
+                      type="button"
+                      className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    >
+                      Change Plan
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    >
+                      Manage Billing
+                    </button>
+                  </div>
+                </div>
+
+                {/* Usage */}
+                <div className="space-y-4">
+                  <h4 className="text-sm font-medium text-gray-900">Current Usage</h4>
+                  
+                  <div className="space-y-3">
+                    <div>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span>Data Sources</span>
+                        <span>2 of 3 used</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div className="bg-blue-600 h-2 rounded-full" style={{ width: '66%' }}></div>
                       </div>
                     </div>
-                    <Button variant="outline" size="sm">Update</Button>
+                    
+                    <div>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span>Team Members</span>
+                        <span>3 of 5 used</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div className="bg-green-600 h-2 rounded-full" style={{ width: '60%' }}></div>
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span>API Calls</span>
+                        <span>8,432 of 50,000 used</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div className="bg-yellow-600 h-2 rounded-full" style={{ width: '17%' }}></div>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Billing History */}
-              <div className="space-y-4">
-                <h4 className="text-sm font-medium">Billing History</h4>
-                <div className="space-y-2">
-                  {[
-                    { date: 'Jul 10, 2025', amount: '$29.00', status: 'Paid' },
-                    { date: 'Jun 10, 2025', amount: '$29.00', status: 'Paid' },
-                    { date: 'May 10, 2025', amount: '$29.00', status: 'Paid' }
-                  ].map((invoice, i) => (
-                    <div key={i} className="flex items-center justify-between p-3 border rounded">
+                {/* Payment Method */}
+                <div className="space-y-4">
+                  <h4 className="text-sm font-medium text-gray-900">Payment Method</h4>
+                  <div className="border rounded-lg p-4">
+                    <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-3">
-                        <Calendar className="h-4 w-4 text-gray-400" />
+                        <CreditCard className="h-8 w-8 text-gray-400" />
                         <div>
-                          <p className="text-sm font-medium">{invoice.date}</p>
-                          <p className="text-xs text-gray-500">Monthly subscription</p>
+                          <p className="font-medium">•••• •••• •••• 4242</p>
+                          <p className="text-sm text-gray-500">Expires 12/27</p>
                         </div>
                       </div>
-                      <div className="flex items-center space-x-2">
-                        <span className="text-sm font-medium">{invoice.amount}</span>
-                        <Badge variant="secondary" className="text-green-600 bg-green-50">
-                          {invoice.status}
-                        </Badge>
+                      <button
+                        type="button"
+                        className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                      >
+                        Update
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Billing History */}
+                <div className="space-y-4">
+                  <h4 className="text-sm font-medium text-gray-900">Billing History</h4>
+                  <div className="space-y-2">
+                    {[
+                      { date: 'Jul 10, 2025', amount: '$29.00', status: 'Paid' },
+                      { date: 'Jun 10, 2025', amount: '$29.00', status: 'Paid' },
+                      { date: 'May 10, 2025', amount: '$29.00', status: 'Paid' }
+                    ].map((invoice, i) => (
+                      <div key={i} className="flex items-center justify-between p-3 border rounded hover:bg-gray-50">
+                        <div className="flex items-center space-x-3">
+                          <Calendar className="h-4 w-4 text-gray-400" />
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">{invoice.date}</p>
+                            <p className="text-xs text-gray-500">Monthly subscription</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-sm font-medium text-gray-900">{invoice.amount}</span>
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            {invoice.status}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Danger Zone */}
+            <div className="bg-white shadow-sm rounded-lg border border-red-200">
+              <div className="px-4 py-5 sm:p-6">
+                <h3 className="text-lg font-medium leading-6 text-red-600">Danger Zone</h3>
+                <p className="mt-1 text-sm text-gray-500">
+                  Irreversible and destructive actions
+                </p>
+              </div>
+              <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
+                <div className="flex items-center justify-between p-4 border border-red-200 rounded-lg">
+                  <div>
+                    <h4 className="text-sm font-medium text-red-600">Delete Organization</h4>
+                    <p className="text-sm text-gray-600">
+                      Permanently delete this organization and all its data
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsDeleteDialogOpen(true)}
+                    className="inline-flex items-center px-3 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Delete confirmation dialog */}
+        {isDeleteDialogOpen && (
+          <div className="fixed z-10 inset-0 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+            <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+              <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true"></div>
+              <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+              <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                  <div className="sm:flex sm:items-start">
+                    <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
+                      <AlertTriangle className="h-6 w-6 text-red-600" />
+                    </div>
+                    <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                      <h3 className="text-lg leading-6 font-medium text-gray-900" id="modal-title">
+                        Delete Organization
+                      </h3>
+                      <div className="mt-2">
+                        <p className="text-sm text-gray-500">
+                          This action cannot be undone. This will permanently delete your organization
+                          and remove all data associated with it.
+                        </p>
+                        <div className="mt-4">
+                          <p className="text-sm">
+                            Please type <strong>{orgSettings.name}</strong> to confirm:
+                          </p>
+                          <input
+                            type="text"
+                            className="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-sm"
+                            placeholder="Organization name"
+                          />
+                        </div>
                       </div>
                     </div>
-                  ))}
+                  </div>
+                </div>
+                <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                  <button
+                    type="button"
+                    onClick={handleDeleteOrganization}
+                    className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm"
+                  >
+                    I understand, delete organization
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsDeleteDialogOpen(false)}
+                    className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+                  >
+                    Cancel
+                  </button>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Danger Zone */}
-          <Card className="border-red-200">
-            <CardHeader>
-              <CardTitle className="text-red-600">Danger Zone</CardTitle>
-              <CardDescription>
-                Irreversible and destructive actions
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between p-4 border border-red-200 rounded-lg">
-                <div>
-                  <h4 className="text-sm font-medium text-red-600">Delete Organization</h4>
-                  <p className="text-sm text-gray-600">
-                    Permanently delete this organization and all its data
-                  </p>
-                </div>
-                <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button variant="destructive" size="sm">
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle className="flex items-center space-x-2">
-                        <AlertTriangle className="h-5 w-5 text-red-500" />
-                        <span>Delete Organization</span>
-                      </DialogTitle>
-                      <DialogDescription>
-                        This action cannot be undone. This will permanently delete your organization
-                        and remove all data associated with it.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="py-4">
-                      <p className="text-sm">
-                        Please type <strong>{orgSettings.name}</strong> to confirm:
-                      </p>
-                      <Input className="mt-2" placeholder="Organization name" />
-                    </div>
-                    <DialogFooter>
-                      <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
-                        Cancel
-                      </Button>
-                      <Button variant="destructive" onClick={handleDeleteOrganization}>
-                        I understand, delete organization
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
