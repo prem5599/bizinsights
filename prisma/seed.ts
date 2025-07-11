@@ -1,14 +1,14 @@
-// Updated prisma/seed.ts - Add demo user with password
+// prisma/seed.ts
 import { PrismaClient } from '@prisma/client'
 import { hash } from 'bcryptjs'
 
 const prisma = new PrismaClient()
 
 async function main() {
-  console.log('🌱 Seeding database...')
+  console.log('🌱 Starting database seed...')
 
-  // Create demo user with password
-  const hashedPassword = await hash('demo123456', 12) // Demo password: demo123456
+  // Create a test user
+  const hashedPassword = await hash('password123', 12)
   
   const user = await prisma.user.upsert({
     where: { email: 'demo@bizinsights.com' },
@@ -17,147 +17,156 @@ async function main() {
       email: 'demo@bizinsights.com',
       name: 'Demo User',
       password: hashedPassword,
-      image: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=32&h=32&fit=crop&crop=face',
     },
   })
 
-  // Create sample organization
+  console.log('👤 Created user:', user.email)
+
+  // Create a demo organization
   const org = await prisma.organization.upsert({
-    where: { slug: 'demo-company' },
+    where: { slug: 'demo-business' },
     update: {},
     create: {
-      name: 'Demo Company',
-      slug: 'demo-company',
-      subscriptionTier: 'pro',
-      members: {
-        create: {
-          userId: user.id,
-          role: 'owner',
-        },
+      name: 'Demo Business',
+      slug: 'demo-business',
+      subscriptionTier: 'free',
+    },
+  })
+
+  console.log('🏢 Created organization:', org.name)
+
+  // Add user to organization as owner
+  await prisma.organizationMember.upsert({
+    where: {
+      organizationId_userId: {
+        organizationId: org.id,
+        userId: user.id,
       },
     },
+    update: {},
+    create: {
+      organizationId: org.id,
+      userId: user.id,
+      role: 'owner',
+    },
   })
+
+  console.log('🔗 Added user to organization as owner')
 
   // Create sample integrations
-  const shopifyIntegration = await prisma.integration.create({
-    data: {
-      organizationId: org.id,
+  const integrations = [
+    {
       platform: 'shopify',
-      platformAccountId: 'demo-shop.myshopify.com',
-      status: 'active',
-      lastSyncAt: new Date(),
-    },
-  })
-
-  const stripeIntegration = await prisma.integration.create({
-    data: {
+      platformAccountId: 'demo-shopify-store',
+      isActive: true,
       organizationId: org.id,
-      platform: 'stripe',
-      platformAccountId: 'acct_demo123',
-      status: 'active',
-      lastSyncAt: new Date(),
     },
-  })
+    {
+      platform: 'stripe',
+      platformAccountId: 'acct_demo_stripe',
+      isActive: true,
+      organizationId: org.id,
+    },
+    {
+      platform: 'google_analytics',
+      platformAccountId: 'demo-ga-account',
+      isActive: false,
+      organizationId: org.id,
+    },
+  ]
 
-  // Create sample data points for the last 30 days
-  const now = new Date()
-  const dataPoints = []
-
-  for (let i = 29; i >= 0; i--) {
-    const date = new Date(now)
-    date.setDate(date.getDate() - i)
-
-    // Shopify revenue data
-    dataPoints.push({
-      integrationId: shopifyIntegration.id,
-      metricType: 'revenue',
-      value: Math.floor(Math.random() * 5000) + 1000, // $1K-$6K per day
-      dateRecorded: date,
-      metadata: { source: 'shopify' },
-    })
-
-    // Shopify orders data
-    dataPoints.push({
-      integrationId: shopifyIntegration.id,
-      metricType: 'orders',
-      value: Math.floor(Math.random() * 50) + 10, // 10-60 orders per day
-      dateRecorded: date,
-      metadata: { source: 'shopify' },
-    })
-
-    // Stripe revenue data
-    dataPoints.push({
-      integrationId: stripeIntegration.id,
-      metricType: 'revenue',
-      value: Math.floor(Math.random() * 3000) + 500, // $500-$3.5K per day
-      dateRecorded: date,
-      metadata: { source: 'stripe' },
-    })
-
-    // Sessions data
-    dataPoints.push({
-      integrationId: shopifyIntegration.id,
-      metricType: 'sessions',
-      value: Math.floor(Math.random() * 1000) + 200, // 200-1200 sessions per day
-      dateRecorded: date,
-      metadata: { source: 'shopify' },
+  for (const integration of integrations) {
+    await prisma.integration.upsert({
+      where: {
+        organizationId_platform: {
+          organizationId: integration.organizationId,
+          platform: integration.platform,
+        },
+      },
+      update: {},
+      create: integration,
     })
   }
 
-  await prisma.dataPoint.createMany({
-    data: dataPoints,
-  })
+  console.log('🔌 Created sample integrations')
 
   // Create sample insights
-  await prisma.insight.createMany({
-    data: [
-      {
-        organizationId: org.id,
-        type: 'trend',
-        title: 'Revenue Growth Accelerating',
-        description: 'Your revenue has increased by 23% compared to last month, driven primarily by higher average order values.',
-        impactScore: 8,
-        metadata: {
-          metric: 'revenue',
-          change: 23,
-          period: 'monthly',
-        },
+  const insights = [
+    {
+      organizationId: org.id,
+      type: 'trend',
+      title: 'Revenue Growth Accelerating',
+      description: 'Your revenue has increased by 23% this month compared to last month, showing strong upward momentum.',
+      impactScore: 85,
+      metadata: {
+        metric: 'revenue',
+        change: 23.4,
+        period: 'month',
       },
-      {
-        organizationId: org.id,
-        type: 'anomaly',
-        title: 'Unusual Traffic Spike Detected',
-        description: 'Website sessions increased by 150% on March 15th. This could indicate a successful marketing campaign or viral content.',
-        impactScore: 6,
-        metadata: {
-          metric: 'sessions',
-          change: 150,
-          date: '2024-03-15',
-        },
+      isRead: false,
+    },
+    {
+      organizationId: org.id,
+      type: 'recommendation',
+      title: 'Optimize Checkout Flow',
+      description: 'Cart abandonment rate is 68%. Consider simplifying your checkout process or adding exit-intent popups.',
+      impactScore: 72,
+      metadata: {
+        metric: 'conversion_rate',
+        current_value: 32,
+        benchmark: 45,
+        potential_impact: '15% increase in conversions',
       },
-      {
-        organizationId: org.id,
-        type: 'recommendation',
-        title: 'Optimize Checkout Process',
-        description: 'Conversion rate dropped by 5% this week. Consider reviewing your checkout flow for potential friction points.',
-        impactScore: 7,
-        metadata: {
-          metric: 'conversion',
-          change: -5,
-          action: 'checkout_optimization',
-        },
+      isRead: false,
+    },
+    {
+      organizationId: org.id,
+      type: 'anomaly',
+      title: 'Unusual Traffic Spike Detected',
+      description: 'Website traffic increased by 150% yesterday. Investigate the source to capitalize on this opportunity.',
+      impactScore: 90,
+      metadata: {
+        metric: 'sessions',
+        change: 150,
+        date: new Date().toISOString(),
       },
-    ],
+      isRead: true,
+    },
+  ]
+
+  for (const insight of insights) {
+    await prisma.insight.create({
+      data: insight,
+    })
+  }
+
+  console.log('💡 Created sample insights')
+
+  // Create sample reports
+  const report = await prisma.report.create({
+    data: {
+      organizationId: org.id,
+      name: 'Monthly Performance Report',
+      type: 'monthly',
+      description: 'Comprehensive overview of business performance for the month',
+      config: {
+        metrics: ['revenue', 'orders', 'customers', 'conversion_rate'],
+        charts: ['revenue_trend', 'traffic_sources', 'top_products'],
+        period: '30d',
+      },
+      isScheduled: true,
+      scheduleConfig: {
+        frequency: 'monthly',
+        dayOfMonth: 1,
+        time: '09:00',
+        recipients: [user.email],
+      },
+    },
   })
 
-  console.log('✅ Database seeded successfully!')
-  console.log(`Created user: ${user.email}`)
-  console.log('Demo login credentials:')
-  console.log('  Email: demo@bizinsights.com')
-  console.log('  Password: demo123456')
-  console.log(`Created organization: ${org.name}`)
-  console.log(`Created ${dataPoints.length} data points`)
-  console.log(`Created 3 insights`)
+  console.log('📊 Created sample report:', report.name)
+
+  console.log('✅ Database seed completed successfully!')
 }
 
 main()
@@ -165,7 +174,7 @@ main()
     await prisma.$disconnect()
   })
   .catch(async (e) => {
-    console.error(e)
+    console.error('❌ Seed failed:', e)
     await prisma.$disconnect()
     process.exit(1)
   })

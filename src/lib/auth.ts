@@ -1,4 +1,4 @@
-// src/lib/auth.ts - Updated with credentials provider
+// src/lib/auth.ts
 import { NextAuthOptions } from "next-auth"
 import { PrismaAdapter } from "@next-auth/prisma-adapter"
 import GoogleProvider from "next-auth/providers/google"
@@ -8,49 +8,39 @@ import { prisma } from "./prisma"
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
+  session: {
+    strategy: "jwt",
+  },
   providers: [
-    // Google OAuth Provider (optional if credentials are set)
-    ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET ? [
-      GoogleProvider({
-        clientId: process.env.GOOGLE_CLIENT_ID,
-        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      })
-    ] : []),
-    
-    // Username/Password Provider
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    }),
     CredentialsProvider({
-      id: "credentials",
       name: "credentials",
       credentials: {
-        email: { 
-          label: "Email", 
-          type: "email", 
-          placeholder: "your@email.com" 
-        },
-        password: { 
-          label: "Password", 
-          type: "password" 
-        }
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" }
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
-          throw new Error("Missing email or password")
+          return null
         }
 
-        // Find user by email
         const user = await prisma.user.findUnique({
-          where: { email: credentials.email }
+          where: {
+            email: credentials.email
+          }
         })
 
         if (!user || !user.password) {
-          throw new Error("Invalid email or password")
+          return null
         }
 
-        // Verify password
         const isPasswordValid = await compare(credentials.password, user.password)
-        
+
         if (!isPasswordValid) {
-          throw new Error("Invalid email or password")
+          return null
         }
 
         return {
@@ -76,12 +66,9 @@ export const authOptions: NextAuthOptions = {
       return token
     },
   },
-  session: {
-    strategy: "jwt",
-  },
   pages: {
-    signIn: "/auth/signin",
-    signUp: "/auth/signup",
-    error: "/auth/error",
+    signIn: '/auth/signin',
+    signUp: '/auth/signup',
   },
+  secret: process.env.NEXTAUTH_SECRET,
 }

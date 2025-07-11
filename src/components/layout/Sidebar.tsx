@@ -1,4 +1,4 @@
-// components/layout/Sidebar.tsx
+// src/components/layout/Sidebar.tsx
 'use client'
 
 import { useState } from 'react'
@@ -14,7 +14,9 @@ import {
   FileText,
   X,
   ChevronDown,
-  Building2
+  Building2,
+  Crown,
+  Zap
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -39,11 +41,12 @@ export function Sidebar({ onClose }: SidebarProps) {
   // Sample organization data - in real app, this would come from context/props
   const currentOrg = {
     name: "My Business",
-    plan: "Free Plan"
+    plan: "Free Plan",
+    avatar: null
   }
 
   return (
-    <div className="flex grow flex-col gap-y-5 overflow-y-auto bg-white px-4 py-6 shadow-lg border-r border-slate-200">
+    <div className="flex grow flex-col gap-y-5 overflow-y-auto bg-white px-6 py-6 shadow-lg border-r border-slate-200">
       {/* Close button for mobile */}
       {onClose && (
         <div className="flex items-center justify-between lg:hidden">
@@ -67,101 +70,131 @@ export function Sidebar({ onClose }: SidebarProps) {
       <div className="relative">
         <button
           type="button"
-          className="flex w-full items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-left text-sm hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="flex w-full items-center gap-x-3 rounded-lg bg-slate-50 px-3 py-2 text-left text-sm font-medium text-slate-900 hover:bg-slate-100"
           onClick={() => setOrgDropdownOpen(!orgDropdownOpen)}
         >
-          <div className="flex items-center space-x-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100">
-              <Building2 className="h-4 w-4 text-blue-600" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-slate-900">
-                {currentOrg.name}
-              </p>
-              <p className="truncate text-xs text-slate-500">
-                {currentOrg.plan}
-              </p>
-            </div>
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white text-sm font-semibold">
+            {currentOrg.avatar ? (
+              <img 
+                src={currentOrg.avatar} 
+                alt={currentOrg.name}
+                className="h-8 w-8 rounded-lg"
+              />
+            ) : (
+              <Building2 className="h-4 w-4" />
+            )}
           </div>
-          <ChevronDown className={cn(
-            "h-4 w-4 text-slate-400 transition-transform duration-200",
-            orgDropdownOpen && "rotate-180"
-          )} />
+          <div className="flex-1 min-w-0">
+            <p className="truncate font-medium text-slate-900">
+              {currentOrg.name}
+            </p>
+            <p className="truncate text-xs text-slate-500">
+              {currentOrg.plan}
+            </p>
+          </div>
+          <ChevronDown className="h-4 w-4 text-slate-400" />
         </button>
 
         {/* Organization dropdown */}
         {orgDropdownOpen && (
-          <div className="absolute left-0 right-0 top-full z-10 mt-1 rounded-md bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5">
+          <div className="absolute left-0 right-0 z-50 mt-2 origin-top rounded-md bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+            <div className="px-3 py-2 border-b border-slate-100">
+              <p className="text-xs font-medium text-slate-900 uppercase tracking-wide">
+                Organizations
+              </p>
+            </div>
             <Link
-              href="/dashboard/organizations"
-              className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
-              onClick={() => setOrgDropdownOpen(false)}
+              href="/dashboard"
+              className="flex items-center px-3 py-2 text-sm text-slate-700 hover:bg-slate-100"
             >
-              Manage Organizations
+              <Building2 className="h-4 w-4 mr-3 text-slate-400" />
+              {currentOrg.name}
+              <Crown className="h-3 w-3 ml-auto text-yellow-500" />
             </Link>
-            <Link
-              href="/dashboard/organizations/new"
-              className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
-              onClick={() => setOrgDropdownOpen(false)}
-            >
-              Create Organization
-            </Link>
+            <div className="border-t border-slate-100">
+              <Link
+                href="/dashboard/settings?tab=organizations"
+                className="flex items-center px-3 py-2 text-sm text-slate-700 hover:bg-slate-100"
+              >
+                <PlusCircle className="h-4 w-4 mr-3 text-slate-400" />
+                Create organization
+              </Link>
+            </div>
           </div>
         )}
       </div>
 
+      {/* Plan upgrade banner */}
+      <div className="rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 p-4 border border-blue-100">
+        <div className="flex items-start space-x-3">
+          <div className="flex-shrink-0">
+            <Zap className="h-5 w-5 text-blue-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-blue-900">
+              Upgrade to Pro
+            </p>
+            <p className="text-xs text-blue-700 mt-1">
+              Get unlimited integrations and advanced insights
+            </p>
+            <button className="mt-2 text-xs font-medium text-blue-600 hover:text-blue-500">
+              Learn more →
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Navigation */}
-      <nav className="flex flex-1 flex-col space-y-1">
-        {navigation.map((item) => {
-          const isActive = pathname === item.href
-          return (
-            <Link
-              key={item.name}
-              href={item.href}
-              className={cn(
-                "group flex items-center rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-200",
-                isActive
-                  ? "bg-blue-50 text-blue-700 border-r-2 border-blue-700"
-                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              )}
-              onClick={onClose} // Close mobile sidebar when link is clicked
-            >
-              <item.icon
-                className={cn(
-                  "mr-3 h-5 w-5 flex-shrink-0 transition-colors duration-200",
-                  isActive 
-                    ? "text-blue-600" 
-                    : "text-slate-400 group-hover:text-slate-500"
-                )}
-              />
-              <span className="truncate">{item.name}</span>
-            </Link>
-          )
-        })}
+      <nav className="flex flex-1 flex-col">
+        <ul role="list" className="flex flex-1 flex-col gap-y-2">
+          {navigation.map((item) => {
+            const isActive = pathname === item.href || 
+              (item.href !== '/dashboard' && pathname.startsWith(item.href))
+            
+            return (
+              <li key={item.name}>
+                <Link
+                  href={item.href}
+                  className={cn(
+                    'group flex gap-x-3 rounded-md px-3 py-2 text-sm font-medium leading-6 transition-colors',
+                    isActive
+                      ? 'bg-blue-50 text-blue-600'
+                      : 'text-slate-700 hover:text-blue-600 hover:bg-slate-50'
+                  )}
+                  onClick={onClose} // Close mobile sidebar when navigating
+                >
+                  <item.icon
+                    className={cn(
+                      'h-5 w-5 shrink-0 transition-colors',
+                      isActive
+                        ? 'text-blue-600'
+                        : 'text-slate-400 group-hover:text-blue-600'
+                    )}
+                  />
+                  {item.name}
+                </Link>
+              </li>
+            )
+          })}
+        </ul>
       </nav>
 
-      {/* Bottom section */}
-      <div className="mt-auto pt-4 border-t border-slate-200">
-        <div className="rounded-lg bg-blue-50 p-4">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <Lightbulb className="h-6 w-6 text-blue-600" />
-            </div>
-            <div className="ml-3 flex-1">
-              <p className="text-sm font-medium text-blue-800">
-                Upgrade to Pro
-              </p>
-              <p className="text-xs text-blue-600">
-                Get advanced insights and unlimited integrations
-              </p>
-            </div>
+      {/* Footer */}
+      <div className="border-t border-slate-200 pt-4">
+        <div className="text-xs text-slate-500 space-y-1">
+          <div className="flex items-center justify-between">
+            <span>Version 1.0.0</span>
+            <Link href="/help" className="text-blue-600 hover:text-blue-500">
+              Help
+            </Link>
           </div>
-          <div className="mt-3">
-            <Link
-              href="/dashboard/billing"
-              className="block w-full rounded-md bg-blue-600 px-3 py-2 text-center text-xs font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              Upgrade Now
+          <div>
+            <Link href="/privacy" className="text-blue-600 hover:text-blue-500">
+              Privacy
+            </Link>
+            {' • '}
+            <Link href="/terms" className="text-blue-600 hover:text-blue-500">
+              Terms
             </Link>
           </div>
         </div>

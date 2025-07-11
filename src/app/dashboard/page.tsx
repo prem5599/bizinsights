@@ -2,6 +2,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useSession } from 'next-auth/react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { MetricCard } from '@/components/layout/MetricCard'
 import { InsightsList } from '@/components/dashboard/InsightsList'
@@ -16,7 +17,9 @@ import {
   RefreshCw,
   AlertTriangle,
   CheckCircle,
-  Info
+  Info,
+  Plus,
+  ArrowRight
 } from 'lucide-react'
 
 interface MetricData {
@@ -59,25 +62,42 @@ interface DashboardData {
 }
 
 export default function DashboardPage() {
+  const { data: session, status } = useSession()
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshingInsights, setRefreshingInsights] = useState(false)
 
   useEffect(() => {
+    if (status === 'loading') return // Still loading session
+    if (status === 'unauthenticated') {
+      // Redirect to login or show login form
+      window.location.href = '/auth/signin'
+      return
+    }
+    
     fetchDashboardData()
-  }, [])
+  }, [status])
 
   const fetchDashboardData = async () => {
     try {
       setLoading(true)
       setError(null)
       
-      // Use temporary organization ID - in real app this would come from route params
+      // Use temporary organization ID for development
       const orgId = 'temp-org-id'
       const response = await fetch(`/api/organizations/${orgId}/dashboard`)
       
       if (!response.ok) {
+        if (response.status === 401) {
+          // Unauthorized - redirect to login
+          window.location.href = '/auth/signin'
+          return
+        }
+        if (response.status === 403) {
+          setError('Access denied. Please check your permissions.')
+          return
+        }
         throw new Error(`Failed to fetch dashboard data: ${response.status}`)
       }
       
@@ -85,58 +105,18 @@ export default function DashboardPage() {
       setData(fetchedData)
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error)
-      setError(error instanceof Error ? error.message : 'Failed to load dashboard data')
-      
-      // Fallback to sample data on error
-      const sampleData: DashboardData = {
-        metrics: {
-          revenue: { current: 45000, previous: 38000, change: 18.4, trend: 'up' },
-          orders: { current: 342, previous: 298, change: 14.8, trend: 'up' },
-          sessions: { current: 8542, previous: 7890, change: 8.3, trend: 'up' },
-          customers: { current: 156, previous: 142, change: 9.9, trend: 'up' },
-          conversion: { current: 4.0, previous: 3.8, change: 5.3, trend: 'up' },
-          aov: { current: 131.58, previous: 127.52, change: 3.2, trend: 'up' }
-        },
-        charts: { revenue_trend: [], traffic_sources: [] },
-        insights: [
-          {
-            id: 'sample-1',
-            type: 'recommendation',
-            title: 'Connect your first integration',
-            description: 'Add Shopify, Stripe, or Google Analytics to start seeing real business insights',
-            impactScore: 10,
-            isRead: false,
-            createdAt: new Date().toISOString()
-          }
-        ],
-        integrations: [],
-        hasRealData: false,
-        message: 'Using sample data due to connection error'
-      }
-      setData(sampleData)
+      setError(error instanceof Error ? error.message : 'An error occurred')
     } finally {
       setLoading(false)
     }
   }
 
   const handleRefreshInsights = async () => {
-    if (!data) return
-    
+    setRefreshingInsights(true)
+    // Simulate API call to refresh insights
     try {
-      setRefreshingInsights(true)
-      const orgId = 'temp-org-id'
-      
-      // Trigger insights generation
-      const response = await fetch(`/api/organizations/${orgId}/insights`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'generate' })
-      })
-      
-      if (response.ok) {
-        // Refresh dashboard data to get new insights
-        await fetchDashboardData()
-      }
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      await fetchDashboardData()
     } catch (error) {
       console.error('Failed to refresh insights:', error)
     } finally {
@@ -144,32 +124,89 @@ export default function DashboardPage() {
     }
   }
 
-  const handleMarkInsightAsRead = async (insightId: string) => {
-    try {
-      const orgId = 'temp-org-id'
-      await fetch(`/api/organizations/${orgId}/insights/${insightId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isRead: true })
+  const handleInsightClick = (insight: any) => {
+    console.log('Insight clicked:', insight)
+    // In a real app, you might open a modal or navigate to details page
+  }
+
+  const handleMarkAsRead = (insightId: string) => {
+    if (data) {
+      setData({
+        ...data,
+        insights: data.insights.map(insight =>
+          insight.id === insightId 
+            ? { ...insight, isRead: true } 
+            : insight
+        )
       })
-      
-      // Update local state
-      if (data) {
-        setData({
-          ...data,
-          insights: data.insights.map(insight =>
-            insight.id === insightId ? { ...insight, isRead: true } : insight
-          )
-        })
-      }
-    } catch (error) {
-      console.error('Failed to mark insight as read:', error)
     }
   }
 
-  const dismissError = () => {
-    setError(null)
+  const handleRefreshData = () => {
+    fetchDashboardData()
   }
+
+  if (status === 'loading' || loading) {
+    return (
+      <DashboardLayout>
+        <div className="space-y-6 sm:space-y-8">
+          <div className="animate-pulse">
+            <div className="h-8 bg-slate-200 rounded w-64 mb-4"></div>
+            <div className="h-4 bg-slate-200 rounded w-96"></div>
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="bg-white p-6 rounded-lg border border-slate-200 animate-pulse">
+                <div className="h-4 bg-slate-200 rounded w-24 mb-3"></div>
+                <div className="h-8 bg-slate-200 rounded w-16"></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </DashboardLayout>
+    )
+  }
+
+  if (error) {
+    return (
+      <DashboardLayout>
+        <div className="rounded-lg bg-red-50 border border-red-200 p-6">
+          <div className="flex">
+            <AlertTriangle className="h-5 w-5 text-red-400 mt-0.5" />
+            <div className="ml-3">
+              <h3 className="text-sm font-medium text-red-800">
+                Error loading dashboard
+              </h3>
+              <div className="mt-2 text-sm text-red-700">
+                <p>{error}</p>
+              </div>
+              <div className="mt-4">
+                <button
+                  onClick={handleRefreshData}
+                  className="rounded-md bg-red-100 px-3 py-2 text-sm font-medium text-red-800 hover:bg-red-200"
+                >
+                  Try again
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </DashboardLayout>
+    )
+  }
+
+  if (!data) {
+    return (
+      <DashboardLayout>
+        <div className="text-center py-12">
+          <p className="text-slate-500">No dashboard data available</p>
+        </div>
+      </DashboardLayout>
+    )
+  }
+
+  const connectedIntegrations = data.integrations.filter(i => i.status === 'connected').length
+  const totalIntegrations = data.integrations.length
 
   return (
     <DashboardLayout>
@@ -183,244 +220,196 @@ export default function DashboardPage() {
                 Dashboard
               </h1>
               <p className="mt-2 text-sm text-slate-600">
-                Overview of your business performance and key metrics
+                {data.message || 'Overview of your business performance'}
               </p>
             </div>
-            
             <div className="flex items-center space-x-3">
-              <select className="rounded-lg border-slate-300 text-sm focus:border-blue-500 focus:ring-blue-500 bg-white px-3 py-2">
-                <option>Last 30 days</option>
-                <option>Last 7 days</option>
-                <option>Last 90 days</option>
-              </select>
-              
               <button
-                onClick={fetchDashboardData}
+                onClick={handleRefreshData}
                 disabled={loading}
-                className="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 disabled:opacity-50"
               >
-                <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                {loading ? 'Loading...' : 'Refresh'}
+                <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
               </button>
             </div>
           </div>
         </div>
 
-        {/* Error State */}
-        {error && (
-          <div className="rounded-lg bg-red-50 border border-red-200 p-4">
-            <div className="flex">
-              <AlertTriangle className="h-5 w-5 text-red-400" />
-              <div className="ml-3 flex-1">
-                <h3 className="text-sm font-medium text-red-800">
-                  Error loading dashboard
-                </h3>
-                <div className="mt-2 text-sm text-red-700">
-                  <p>{error}</p>
-                </div>
-                <div className="mt-4 flex space-x-3">
-                  <button
-                    onClick={fetchDashboardData}
-                    className="rounded-md bg-red-100 px-3 py-2 text-sm font-medium text-red-800 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500"
-                  >
-                    Try again
-                  </button>
-                  <button
-                    onClick={dismissError}
-                    className="rounded-md bg-white px-3 py-2 text-sm font-medium text-red-800 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500"
-                  >
-                    Dismiss
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Data Source Indicator */}
-        {!loading && data && (
-          <div className={`rounded-lg border p-4 ${
-            data.hasRealData ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200'
-          }`}>
-            <div className="flex items-center space-x-3">
-              <div className={`h-2 w-2 rounded-full ${
-                data.hasRealData ? 'bg-green-500' : 'bg-blue-500'
-              }`} />
+        {/* Data Source Status */}
+        {!data.hasRealData && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-start space-x-3">
+              <Info className="h-5 w-5 text-blue-600 mt-0.5" />
               <div className="flex-1">
-                <p className={`text-sm font-medium ${
-                  data.hasRealData ? 'text-green-800' : 'text-blue-800'
-                }`}>
-                  {data.hasRealData ? 'Live Data Connected' : 'Sample Data Mode'}
+                <h3 className="text-sm font-medium text-blue-900">
+                  Demo Mode
+                </h3>
+                <p className="text-sm text-blue-700 mt-1">
+                  You're viewing sample data. Connect your business tools to see real analytics.
                 </p>
-                <p className={`text-xs ${
-                  data.hasRealData ? 'text-green-600' : 'text-blue-600'
-                }`}>
-                  {data.message || (data.hasRealData 
-                    ? `Data from ${data.integrations.length} connected integration${data.integrations.length !== 1 ? 's' : ''}`
-                    : 'Connect Shopify, Stripe, or Google Analytics to see your real business data'
-                  )}
-                </p>
+                <div className="mt-3">
+                  <a
+                    href="/dashboard/integrations"
+                    className="inline-flex items-center px-3 py-2 text-sm font-medium text-blue-600 bg-blue-100 border border-transparent rounded-md hover:bg-blue-200"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Connect Integrations
+                  </a>
+                </div>
               </div>
-              {!data.hasRealData && (
-                <button
-                  onClick={() => window.location.href = '/dashboard/integrations'}
-                  className="px-3 py-1 text-xs font-medium text-blue-800 bg-blue-100 rounded-md hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  Connect Integration
-                </button>
-              )}
             </div>
           </div>
         )}
 
-        {/* Key Metrics Grid */}
+        {/* Key Metrics */}
         <div className="grid grid-cols-1 gap-4 sm:gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <MetricCard
-            title="Total Revenue"
-            value={data?.metrics.revenue.current || 0}
-            change={data?.metrics.revenue.change}
-            trend={data?.metrics.revenue.trend}
+            title="Revenue"
+            value={data.metrics.revenue.current}
+            change={data.metrics.revenue.change}
+            trend={data.metrics.revenue.trend}
             format="currency"
-            isLoading={loading}
-            icon={<DollarSign className="h-5 w-5" />}
-            description="Total revenue generated"
-            className="col-span-1 xl:col-span-2"
+            icon={DollarSign}
           />
-          
           <MetricCard
             title="Orders"
-            value={data?.metrics.orders.current || 0}
-            change={data?.metrics.orders.change}
-            trend={data?.metrics.orders.trend}
-            isLoading={loading}
-            icon={<ShoppingCart className="h-5 w-5" />}
-            description="Total orders received"
+            value={data.metrics.orders.current}
+            change={data.metrics.orders.change}
+            trend={data.metrics.orders.trend}
+            format="number"
+            icon={ShoppingCart}
           />
-          
           <MetricCard
-            title="Website Sessions"
-            value={data?.metrics.sessions.current || 0}
-            change={data?.metrics.sessions.change}
-            trend={data?.metrics.sessions.trend}
-            isLoading={loading}
-            icon={<Eye className="h-5 w-5" />}
-            description="Unique website visitors"
+            title="Sessions"
+            value={data.metrics.sessions.current}
+            change={data.metrics.sessions.change}
+            trend={data.metrics.sessions.trend}
+            format="number"
+            icon={Eye}
           />
-          
           <MetricCard
             title="Customers"
-            value={data?.metrics.customers.current || 0}
-            change={data?.metrics.customers.change}
-            trend={data?.metrics.customers.trend}
-            isLoading={loading}
-            icon={<Users className="h-5 w-5" />}
-            description="Total unique customers"
+            value={data.metrics.customers.current}
+            change={data.metrics.customers.change}
+            trend={data.metrics.customers.trend}
+            format="number"
+            icon={Users}
           />
-          
           <MetricCard
-            title="Avg Order Value"
-            value={data?.metrics.aov.current || 0}
-            change={data?.metrics.aov.change}
-            trend={data?.metrics.aov.trend}
+            title="Conversion"
+            value={data.metrics.conversion.current}
+            change={data.metrics.conversion.change}
+            trend={data.metrics.conversion.trend}
+            format="percentage"
+            icon={TrendingUp}
+          />
+          <MetricCard
+            title="AOV"
+            value={data.metrics.aov.current}
+            change={data.metrics.aov.change}
+            trend={data.metrics.aov.trend}
             format="currency"
-            isLoading={loading}
-            icon={<TrendingUp className="h-5 w-5" />}
-            description="Average value per order"
+            icon={BarChart3}
           />
         </div>
 
-        {/* AI Insights Section */}
-        {!loading && data && (
-          <div className="rounded-xl bg-white p-6 shadow-sm border border-slate-200">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center space-x-3">
-                <div className="p-2 bg-yellow-100 rounded-lg">
-                  <Zap className="h-5 w-5 text-yellow-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900">
-                    AI Insights
-                  </h3>
-                  <p className="text-sm text-slate-600">
-                    Intelligent analysis of your business data
-                  </p>
-                </div>
-              </div>
-              
-              <div className="flex items-center space-x-3">
-                {data.hasRealData && (
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
+          
+          {/* Insights */}
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-lg border border-slate-200 p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-medium text-slate-900">
+                  Latest Insights
+                </h2>
+                <div className="flex items-center space-x-2">
                   <button
                     onClick={handleRefreshInsights}
                     disabled={refreshingInsights}
-                    className="inline-flex items-center px-3 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                    className="text-sm text-slate-500 hover:text-slate-700 disabled:opacity-50"
                   >
-                    <RefreshCw className={`mr-2 h-4 w-4 ${refreshingInsights ? 'animate-spin' : ''}`} />
-                    {refreshingInsights ? 'Generating...' : 'Refresh Insights'}
+                    <RefreshCw className={`h-4 w-4 ${refreshingInsights ? 'animate-spin' : ''}`} />
                   </button>
-                )}
-              </div>
-            </div>
-            
-            {data.insights.length > 0 ? (
-              <>
-                <InsightsList
-                  insights={data.insights}
-                  onMarkAsRead={handleMarkInsightAsRead}
-                  limit={3}
-                  showActions={true}
-                />
-                
-                {data.insights.length > 3 && (
-                  <div className="mt-4 text-center">
-                    <button 
-                      onClick={() => window.location.href = '/dashboard/insights'}
-                      className="text-sm text-blue-600 hover:text-blue-800 font-medium focus:outline-none focus:underline"
-                    >
-                      View all insights →
-                    </button>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="flex items-center justify-center h-32 bg-slate-50 rounded-lg">
-                <div className="text-center">
-                  <Info className="h-8 w-8 text-slate-400 mx-auto mb-2" />
-                  <p className="text-slate-600 text-sm">
-                    {data.hasRealData 
-                      ? 'No insights available yet. Check back soon!' 
-                      : 'Connect your integrations to see AI-powered insights'
-                    }
-                  </p>
+                  <a
+                    href="/dashboard/insights"
+                    className="text-sm text-blue-600 hover:text-blue-500"
+                  >
+                    View all
+                  </a>
                 </div>
               </div>
-            )}
-          </div>
-        )}
-
-        {/* Charts Section - Coming Soon */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="rounded-xl bg-white p-6 shadow-sm border border-slate-200">
-            <h3 className="text-lg font-semibold text-slate-900 mb-4">
-              Revenue Trend
-            </h3>
-            <div className="flex items-center justify-center h-64 bg-slate-50 rounded-lg">
-              <div className="text-center">
-                <BarChart3 className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-                <p className="text-slate-600 text-sm">Charts coming in next phase</p>
-                <p className="text-slate-500 text-xs mt-1">Revenue visualization will appear here</p>
-              </div>
+              <InsightsList
+                insights={data.insights}
+                onInsightClick={handleInsightClick}
+                onMarkAsRead={handleMarkAsRead}
+                isLoading={refreshingInsights}
+                maxItems={5}
+              />
             </div>
           </div>
-          
-          <div className="rounded-xl bg-white p-6 shadow-sm border border-slate-200">
-            <h3 className="text-lg font-semibold text-slate-900 mb-4">
-              Traffic Sources
-            </h3>
-            <div className="flex items-center justify-center h-64 bg-slate-50 rounded-lg">
-              <div className="text-center">
-                <Users className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-                <p className="text-slate-600 text-sm">Charts coming in next phase</p>
-                <p className="text-slate-500 text-xs mt-1">Traffic source breakdown will appear here</p>
+
+          {/* Quick Actions & Status */}
+          <div className="space-y-6">
+            
+            {/* Integrations Status */}
+            <div className="bg-white rounded-lg border border-slate-200 p-6">
+              <h3 className="text-lg font-medium text-slate-900 mb-4">
+                Data Sources
+              </h3>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-slate-600">Connected</span>
+                  <span className="text-sm font-medium text-slate-900">
+                    {connectedIntegrations} of {totalIntegrations}
+                  </span>
+                </div>
+                <div className="w-full bg-slate-200 rounded-full h-2">
+                  <div 
+                    className="bg-blue-600 h-2 rounded-full" 
+                    style={{ width: `${(connectedIntegrations / totalIntegrations) * 100}%` }}
+                  ></div>
+                </div>
+                <div className="pt-2">
+                  <a
+                    href="/dashboard/integrations"
+                    className="inline-flex items-center text-sm text-blue-600 hover:text-blue-500"
+                  >
+                    Manage integrations
+                    <ArrowRight className="h-4 w-4 ml-1" />
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Actions */}
+            <div className="bg-white rounded-lg border border-slate-200 p-6">
+              <h3 className="text-lg font-medium text-slate-900 mb-4">
+                Quick Actions
+              </h3>
+              <div className="space-y-3">
+                <a
+                  href="/dashboard/analytics"
+                  className="flex items-center p-3 text-sm text-slate-700 rounded-md hover:bg-slate-50"
+                >
+                  <BarChart3 className="h-5 w-5 mr-3 text-slate-400" />
+                  View detailed analytics
+                </a>
+                <a
+                  href="/dashboard/reports"
+                  className="flex items-center p-3 text-sm text-slate-700 rounded-md hover:bg-slate-50"
+                >
+                  <CheckCircle className="h-5 w-5 mr-3 text-slate-400" />
+                  Generate report
+                </a>
+                <a
+                  href="/dashboard/integrations"
+                  className="flex items-center p-3 text-sm text-slate-700 rounded-md hover:bg-slate-50"
+                >
+                  <Plus className="h-5 w-5 mr-3 text-slate-400" />
+                  Add integration
+                </a>
               </div>
             </div>
           </div>

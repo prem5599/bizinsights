@@ -1,4 +1,4 @@
-// components/dashboard/InsightsList.tsx
+// src/components/dashboard/InsightsList.tsx
 'use client'
 
 import { useState } from 'react'
@@ -6,28 +6,28 @@ import {
   Lightbulb, 
   TrendingUp, 
   AlertTriangle, 
-  Target, 
-  Star,
+  CheckCircle, 
+  Info,
   Eye,
   EyeOff,
-  X,
-  ChevronRight,
-  Zap
+  RefreshCw,
+  Clock
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, getRelativeTime } from '@/lib/utils'
 
 interface Insight {
   id: string
-  type: 'trend' | 'anomaly' | 'recommendation' | 'opportunity'
+  type: 'trend' | 'anomaly' | 'recommendation' | 'alert'
   title: string
   description: string
   impactScore: number
   isRead: boolean
   createdAt: string
-  metadata?: {
-    category?: string
-    urgency?: 'low' | 'medium' | 'high'
-    actionable?: boolean
+  data?: {
+    metric?: string
+    change?: number
+    threshold?: number
+    recommendation?: string
   }
 }
 
@@ -35,49 +35,35 @@ interface InsightsListProps {
   insights: Insight[]
   onInsightClick?: (insight: Insight) => void
   onMarkAsRead?: (insightId: string) => void
-  onDismiss?: (insightId: string) => void
-  showActions?: boolean
-  limit?: number
+  isLoading?: boolean
+  showUnreadOnly?: boolean
+  maxItems?: number
+  className?: string
 }
 
 export function InsightsList({
-  insights,
+  insights = [],
   onInsightClick,
   onMarkAsRead,
-  onDismiss,
-  showActions = true,
-  limit
+  isLoading = false,
+  showUnreadOnly = false,
+  maxItems,
+  className
 }: InsightsListProps) {
-  const [expandedInsight, setExpandedInsight] = useState<string | null>(null)
-  
-  const displayInsights = limit ? insights.slice(0, limit) : insights
-
-  if (displayInsights.length === 0) {
-    return (
-      <div className="text-center py-8">
-        <Lightbulb className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-        <h3 className="text-lg font-medium text-slate-900 mb-2">
-          No insights yet
-        </h3>
-        <p className="text-slate-600">
-          Connect your integrations and we'll analyze your data to provide AI-powered insights
-        </p>
-      </div>
-    )
-  }
+  const [filter, setFilter] = useState<'all' | 'unread'>('all')
 
   const getInsightIcon = (type: string) => {
     switch (type) {
       case 'trend':
-        return <TrendingUp className="h-5 w-5" />
+        return TrendingUp
       case 'anomaly':
-        return <AlertTriangle className="h-5 w-5" />
+        return AlertTriangle
       case 'recommendation':
-        return <Target className="h-5 w-5" />
-      case 'opportunity':
-        return <Star className="h-5 w-5" />
+        return Lightbulb
+      case 'alert':
+        return Info
       default:
-        return <Lightbulb className="h-5 w-5" />
+        return Info
     }
   }
 
@@ -89,216 +75,192 @@ export function InsightsList({
         return 'text-orange-600 bg-orange-50 border-orange-200'
       case 'recommendation':
         return 'text-green-600 bg-green-50 border-green-200'
-      case 'opportunity':
-        return 'text-purple-600 bg-purple-50 border-purple-200'
+      case 'alert':
+        return 'text-red-600 bg-red-50 border-red-200'
       default:
         return 'text-slate-600 bg-slate-50 border-slate-200'
     }
   }
 
-  const getUrgencyIndicator = (urgency?: string) => {
-    switch (urgency) {
-      case 'high':
-        return <div className="h-2 w-2 rounded-full bg-red-500" />
-      case 'medium':
-        return <div className="h-2 w-2 rounded-full bg-yellow-500" />
-      case 'low':
-        return <div className="h-2 w-2 rounded-full bg-green-500" />
-      default:
-        return null
+  const getImpactBadge = (score: number) => {
+    if (score >= 80) {
+      return { label: 'High', color: 'bg-red-100 text-red-800' }
+    } else if (score >= 50) {
+      return { label: 'Medium', color: 'bg-yellow-100 text-yellow-800' }
+    } else {
+      return { label: 'Low', color: 'bg-green-100 text-green-800' }
     }
   }
 
-  const formatTimeAgo = (dateString: string) => {
-    const date = new Date(dateString)
-    const now = new Date()
-    const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60))
-    
-    if (diffInHours < 1) return 'Just now'
-    if (diffInHours < 24) return `${diffInHours}h ago`
-    
-    const diffInDays = Math.floor(diffInHours / 24)
-    if (diffInDays < 7) return `${diffInDays}d ago`
-    
-    return date.toLocaleDateString()
-  }
+  const filteredInsights = insights
+    .filter(insight => showUnreadOnly || filter === 'all' ? true : !insight.isRead)
+    .slice(0, maxItems)
 
   const handleInsightClick = (insight: Insight) => {
-    if (!insight.isRead && onMarkAsRead) {
+    if (onInsightClick) {
+      onInsightClick(insight)
+    }
+    if (onMarkAsRead && !insight.isRead) {
       onMarkAsRead(insight.id)
     }
-    
-    setExpandedInsight(expandedInsight === insight.id ? null : insight.id)
-    onInsightClick?.(insight)
   }
 
-  return (
-    <div className="space-y-3">
-      {displayInsights.map((insight) => (
-        <div
-          key={insight.id}
-          className={cn(
-            "relative rounded-lg border transition-all duration-200 hover:shadow-md",
-            insight.isRead ? "bg-white" : "bg-blue-50 border-blue-200",
-            getInsightColor(insight.type)
-          )}
-        >
-          {/* Main insight content */}
-          <div 
-            className="p-4 cursor-pointer"
-            onClick={() => handleInsightClick(insight)}
-          >
+  if (isLoading) {
+    return (
+      <div className={cn("space-y-4", className)}>
+        {[...Array(3)].map((_, i) => (
+          <div key={i} className="bg-white rounded-lg border border-slate-200 p-4 animate-pulse">
             <div className="flex items-start space-x-3">
-              {/* Icon */}
-              <div className={cn(
-                "flex-shrink-0 p-2 rounded-lg",
-                getInsightColor(insight.type)
-              )}>
-                {getInsightIcon(insight.type)}
-              </div>
-
-              {/* Content */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-2 mb-1">
-                      <h4 className={cn(
-                        "text-sm font-medium truncate",
-                        insight.isRead ? "text-slate-900" : "text-blue-900"
-                      )}>
-                        {insight.title}
-                      </h4>
-                      
-                      {/* Urgency indicator */}
-                      {getUrgencyIndicator(insight.metadata?.urgency)}
-                      
-                      {/* Unread indicator */}
-                      {!insight.isRead && (
-                        <div className="h-2 w-2 rounded-full bg-blue-500" />
-                      )}
-                    </div>
-                    
-                    <p className={cn(
-                      "text-sm line-clamp-2",
-                      insight.isRead ? "text-slate-600" : "text-blue-700"
-                    )}>
-                      {insight.description}
-                    </p>
-                  </div>
-
-                  {/* Impact score and actions */}
-                  <div className="flex items-center space-x-2 ml-4">
-                    {/* Impact score */}
-                    <div className="flex items-center space-x-1">
-                      <Zap className="h-3 w-3 text-yellow-500" />
-                      <span className="text-xs font-medium text-slate-600">
-                        {insight.impactScore}/10
-                      </span>
-                    </div>
-
-                    {/* Actions */}
-                    {showActions && (
-                      <div className="flex items-center space-x-1">
-                        {onMarkAsRead && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              onMarkAsRead(insight.id)
-                            }}
-                            className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-                            title={insight.isRead ? "Mark as unread" : "Mark as read"}
-                          >
-                            {insight.isRead ? (
-                              <EyeOff className="h-4 w-4" />
-                            ) : (
-                              <Eye className="h-4 w-4" />
-                            )}
-                          </button>
-                        )}
-                        
-                        {onDismiss && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              onDismiss(insight.id)
-                            }}
-                            className="p-1 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50"
-                            title="Dismiss insight"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Expand indicator */}
-                    <ChevronRight className={cn(
-                      "h-4 w-4 text-slate-400 transition-transform duration-200",
-                      expandedInsight === insight.id && "rotate-90"
-                    )} />
-                  </div>
-                </div>
-
-                {/* Metadata row */}
-                <div className="flex items-center justify-between mt-2">
-                  <div className="flex items-center space-x-2">
-                    <span className={cn(
-                      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium",
-                      getInsightColor(insight.type)
-                    )}>
-                      {insight.type}
-                    </span>
-                    
-                    {insight.metadata?.category && (
-                      <span className="text-xs text-slate-500">
-                        {insight.metadata.category}
-                      </span>
-                    )}
-                  </div>
-
-                  <span className="text-xs text-slate-500">
-                    {formatTimeAgo(insight.createdAt)}
-                  </span>
-                </div>
+              <div className="w-8 h-8 bg-slate-200 rounded-full"></div>
+              <div className="flex-1 space-y-2">
+                <div className="h-4 bg-slate-200 rounded w-3/4"></div>
+                <div className="h-3 bg-slate-200 rounded w-full"></div>
+                <div className="h-3 bg-slate-200 rounded w-1/2"></div>
               </div>
             </div>
           </div>
+        ))}
+      </div>
+    )
+  }
 
-          {/* Expanded content */}
-          {expandedInsight === insight.id && (
-            <div className="border-t border-slate-200 px-4 py-3 bg-slate-50">
-              <div className="text-sm text-slate-700">
-                <p className="mb-3">{insight.description}</p>
-                
-                {insight.metadata?.actionable && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
-                    <h5 className="text-sm font-medium text-blue-900 mb-1">
-                      Recommended Actions:
-                    </h5>
-                    <ul className="text-sm text-blue-800 space-y-1">
-                      <li>• Review the data and identify contributing factors</li>
-                      <li>• Consider implementing the suggested improvements</li>
-                      <li>• Monitor the impact of any changes made</li>
-                    </ul>
+  if (filteredInsights.length === 0) {
+    return (
+      <div className={cn("text-center py-8", className)}>
+        <Lightbulb className="h-12 w-12 text-slate-300 mx-auto mb-4" />
+        <h3 className="text-sm font-medium text-slate-900 mb-2">
+          {showUnreadOnly || filter === 'unread' ? 'No unread insights' : 'No insights yet'}
+        </h3>
+        <p className="text-sm text-slate-500">
+          {showUnreadOnly || filter === 'unread' 
+            ? 'All insights have been read' 
+            : 'Connect your data sources to start getting AI-powered insights'
+          }
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className={cn("space-y-4", className)}>
+      {/* Filter tabs */}
+      {!showUnreadOnly && (
+        <div className="flex items-center justify-between">
+          <div className="flex space-x-1 bg-slate-100 rounded-lg p-1">
+            <button
+              onClick={() => setFilter('all')}
+              className={cn(
+                "px-3 py-1 text-sm font-medium rounded-md transition-colors",
+                filter === 'all'
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              All
+            </button>
+            <button
+              onClick={() => setFilter('unread')}
+              className={cn(
+                "px-3 py-1 text-sm font-medium rounded-md transition-colors",
+                filter === 'unread'
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              Unread ({insights.filter(i => !i.isRead).length})
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Insights list */}
+      <div className="space-y-3">
+        {filteredInsights.map((insight) => {
+          const Icon = getInsightIcon(insight.type)
+          const impactBadge = getImpactBadge(insight.impactScore)
+
+          return (
+            <div
+              key={insight.id}
+              className={cn(
+                "bg-white rounded-lg border border-slate-200 p-4 hover:shadow-md transition-shadow cursor-pointer",
+                !insight.isRead && "ring-2 ring-blue-100 border-blue-200"
+              )}
+              onClick={() => handleInsightClick(insight)}
+            >
+              <div className="flex items-start space-x-3">
+                {/* Icon */}
+                <div className={cn(
+                  "flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center border",
+                  getInsightColor(insight.type)
+                )}>
+                  <Icon className="h-4 w-4" />
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between">
+                    <h4 className="text-sm font-medium text-slate-900 mb-1">
+                      {insight.title}
+                    </h4>
+                    <div className="flex items-center space-x-2 ml-2">
+                      {/* Impact badge */}
+                      <span className={cn(
+                        "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium",
+                        impactBadge.color
+                      )}>
+                        {impactBadge.label}
+                      </span>
+                      {/* Read status */}
+                      {insight.isRead ? (
+                        <EyeOff className="h-4 w-4 text-slate-400" />
+                      ) : (
+                        <Eye className="h-4 w-4 text-blue-600" />
+                      )}
+                    </div>
                   </div>
-                )}
-                
-                {/* Metadata details */}
-                {insight.metadata && Object.keys(insight.metadata).length > 3 && (
-                  <details className="mt-3">
-                    <summary className="text-xs text-slate-500 cursor-pointer hover:text-slate-700">
-                      View technical details
-                    </summary>
-                    <pre className="mt-2 text-xs text-slate-600 bg-white rounded p-2 overflow-auto">
-                      {JSON.stringify(insight.metadata, null, 2)}
-                    </pre>
-                  </details>
-                )}
+
+                  <p className="text-sm text-slate-600 mb-2">
+                    {insight.description}
+                  </p>
+
+                  {/* Additional data */}
+                  {insight.data && (
+                    <div className="text-xs text-slate-500 space-y-1">
+                      {insight.data.metric && (
+                        <div>Metric: {insight.data.metric}</div>
+                      )}
+                      {insight.data.change && (
+                        <div>Change: {insight.data.change > 0 ? '+' : ''}{insight.data.change}%</div>
+                      )}
+                      {insight.data.recommendation && (
+                        <div className="font-medium text-slate-600">
+                          💡 {insight.data.recommendation}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Timestamp */}
+                  <div className="flex items-center mt-3 text-xs text-slate-400">
+                    <Clock className="h-3 w-3 mr-1" />
+                    {getRelativeTime(insight.createdAt)}
+                  </div>
+                </div>
               </div>
             </div>
-          )}
+          )
+        })}
+      </div>
+
+      {/* View more link */}
+      {maxItems && insights.length > maxItems && (
+        <div className="text-center pt-4">
+          <button className="text-sm text-blue-600 hover:text-blue-500 font-medium">
+            View all insights ({insights.length})
+          </button>
         </div>
-      ))}
+      )}
     </div>
   )
 }

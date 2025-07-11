@@ -1,9 +1,8 @@
-// components/dashboard/MetricCard.tsx
+// src/components/layout/MetricCard.tsx
 'use client'
 
-import { TrendingUp, TrendingDown, Minus, MoreVertical } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { useState } from 'react'
+import { LucideIcon, TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { cn, formatCurrency, formatNumber, formatPercentage } from '@/lib/utils'
 
 interface MetricCardProps {
   title: string
@@ -11,10 +10,10 @@ interface MetricCardProps {
   change?: number
   trend?: 'up' | 'down' | 'neutral'
   format?: 'currency' | 'number' | 'percentage'
-  period?: string
+  icon?: LucideIcon
   isLoading?: boolean
-  icon?: React.ReactNode
   description?: string
+  className?: string
 }
 
 export function MetricCard({
@@ -23,175 +22,122 @@ export function MetricCard({
   change,
   trend = 'neutral',
   format = 'number',
-  period = 'vs last period',
+  icon: Icon,
   isLoading = false,
-  icon,
-  description
+  description,
+  className
 }: MetricCardProps) {
-  const [showMenu, setShowMenu] = useState(false)
-
-  if (isLoading) {
-    return (
-      <div className="relative overflow-hidden rounded-xl bg-white p-4 sm:p-6 shadow-sm border border-slate-200 hover:shadow-md transition-shadow duration-200">
-        <div className="animate-pulse">
-          <div className="flex items-center justify-between mb-4">
-            <div className="h-4 bg-slate-200 rounded w-1/2"></div>
-            <div className="h-4 w-4 bg-slate-200 rounded"></div>
-          </div>
-          <div className="space-y-3">
-            <div className="h-8 bg-slate-200 rounded w-3/4"></div>
-            <div className="h-3 bg-slate-200 rounded w-1/2"></div>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
+  
   const formatValue = (val: number | string) => {
     if (typeof val === 'string') return val
     
     switch (format) {
       case 'currency':
-        return new Intl.NumberFormat('en-US', {
-          style: 'currency',
-          currency: 'USD',
-          minimumFractionDigits: 0,
-          maximumFractionDigits: 0
-        }).format(val)
+        return formatCurrency(val)
       case 'percentage':
         return `${val}%`
+      case 'number':
       default:
-        return new Intl.NumberFormat('en-US').format(val)
+        return formatNumber(val)
     }
   }
 
   const getTrendIcon = () => {
     switch (trend) {
       case 'up':
-        return <TrendingUp className="h-4 w-4 text-emerald-500" />
+        return TrendingUp
       case 'down':
-        return <TrendingDown className="h-4 w-4 text-red-500" />
+        return TrendingDown
       default:
-        return <Minus className="h-4 w-4 text-slate-400" />
+        return Minus
     }
   }
 
   const getTrendColor = () => {
     switch (trend) {
       case 'up':
-        return 'text-emerald-600 bg-emerald-50'
-      case 'down':
-        return 'text-red-600 bg-red-50'
-      default:
-        return 'text-slate-600 bg-slate-50'
-    }
-  }
-
-  const getChangeColor = () => {
-    if (change === undefined) return 'text-slate-500'
-    switch (trend) {
-      case 'up':
-        return 'text-emerald-600'
+        return 'text-green-600'
       case 'down':
         return 'text-red-600'
       default:
-        return 'text-slate-600'
+        return 'text-slate-500'
     }
   }
 
-  return (
-    <div className="group relative overflow-hidden rounded-xl bg-white p-4 sm:p-6 shadow-sm border border-slate-200 hover:shadow-md transition-all duration-200 hover:border-slate-300">
-      
-      {/* Header */}
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center space-x-3">
-          {icon && (
-            <div className={cn(
-              "flex h-10 w-10 items-center justify-center rounded-lg transition-colors duration-200",
-              getTrendColor()
-            )}>
-              {icon}
-            </div>
-          )}
-          <div>
-            <p className="text-sm font-medium text-slate-600 truncate">
-              {title}
-            </p>
-            {description && (
-              <p className="text-xs text-slate-500 mt-1 hidden sm:block">
-                {description}
-              </p>
+  const TrendIcon = getTrendIcon()
+
+  if (isLoading) {
+    return (
+      <div 
+        className={cn(
+          "bg-white rounded-lg border border-slate-200 p-6 shadow-sm",
+          className
+        )}
+        data-testid="metric-loading"
+      >
+        <div className="animate-pulse">
+          <div className="flex items-center justify-between mb-4">
+            <div className="h-4 bg-slate-200 rounded w-20"></div>
+            {Icon && (
+              <div className="h-5 w-5 bg-slate-200 rounded"></div>
             )}
           </div>
+          <div className="h-8 bg-slate-200 rounded w-24 mb-2"></div>
+          <div className="h-3 bg-slate-200 rounded w-16"></div>
         </div>
+      </div>
+    )
+  }
 
-        {/* Menu button */}
-        <div className="relative">
-          <button
-            type="button"
-            className="opacity-0 group-hover:opacity-100 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-500 transition-all duration-200"
-            onClick={() => setShowMenu(!showMenu)}
-          >
-            <MoreVertical className="h-4 w-4" />
-          </button>
-
-          {showMenu && (
-            <div className="absolute right-0 z-10 mt-1 w-40 rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5">
-              <div className="py-1">
-                <button className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-100">
-                  View Details
-                </button>
-                <button className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-100">
-                  Export Data
-                </button>
-                <button className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-100">
-                  Set Alert
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+  return (
+    <div 
+      className={cn(
+        "bg-white rounded-lg border border-slate-200 p-6 shadow-sm hover:shadow-md transition-shadow",
+        className
+      )}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-medium text-slate-600 truncate">
+          {title}
+        </h3>
+        {Icon && (
+          <Icon className="h-5 w-5 text-slate-400 flex-shrink-0" />
+        )}
       </div>
 
       {/* Value */}
-      <div className="mb-4">
-        <div className="flex items-baseline space-x-2">
-          <p className="text-2xl sm:text-3xl font-bold text-slate-900 truncate">
-            {formatValue(value)}
-          </p>
-          {getTrendIcon()}
+      <div className="mb-2">
+        <div className="text-2xl font-bold text-slate-900">
+          {formatValue(value)}
         </div>
       </div>
 
-      {/* Change indicator */}
-      {change !== undefined && (
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <span className={cn(
-              "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium",
-              getTrendColor()
-            )}>
-              {change > 0 ? '+' : ''}{change}%
-            </span>
-            <span className="text-xs text-slate-500 hidden sm:inline">
-              {period}
-            </span>
+      {/* Change and Description */}
+      <div className="flex items-center justify-between">
+        {change !== undefined && (
+          <div className={cn(
+            "flex items-center text-sm font-medium",
+            getTrendColor()
+          )}>
+            <TrendIcon className="h-4 w-4 mr-1" />
+            {formatPercentage(change)}
           </div>
-          
-          {/* Mobile period display */}
-          <span className="text-xs text-slate-500 sm:hidden">
-            {period.split(' ').slice(0, 2).join(' ')}
+        )}
+        
+        {description && (
+          <span className="text-xs text-slate-500 ml-2 truncate">
+            {description}
           </span>
+        )}
+      </div>
+
+      {/* Additional trend context */}
+      {change !== undefined && (
+        <div className="mt-2 text-xs text-slate-500">
+          vs. previous period
         </div>
       )}
-
-      {/* Gradient accent */}
-      <div className={cn(
-        "absolute bottom-0 left-0 h-1 w-full transition-all duration-300",
-        trend === 'up' && "bg-gradient-to-r from-emerald-500 to-emerald-400",
-        trend === 'down' && "bg-gradient-to-r from-red-500 to-red-400",
-        trend === 'neutral' && "bg-gradient-to-r from-slate-400 to-slate-300"
-      )} />
     </div>
   )
 }
