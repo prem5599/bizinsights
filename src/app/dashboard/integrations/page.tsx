@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
-import { ShopifyConnect } from '@/components/integrations/ShopifyConnect'
+import { ShopifyOAuthConnect } from '@/components/integrations/ShopifyOAuthConnect'
 import { 
   Puzzle, 
   Check, 
@@ -445,11 +445,11 @@ export default function IntegrationsPage() {
       </div>
 
       {/* Shopify Connect Modal */}
-      <ShopifyConnect
-        isOpen={showShopifyConnect}
-        onClose={() => setShowShopifyConnect(false)}
-        onSuccess={handleShopifySuccess}
-      />
+    <ShopifyOAuthConnect
+  isOpen={showShopifyConnect}
+  onClose={() => setShowShopifyConnect(false)}
+  onSuccess={handleShopifySuccess}
+/>
     </DashboardLayout>
   )
 }

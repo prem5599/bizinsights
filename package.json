@@ -11,7 +11,11 @@
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "db:reset": "prisma db push --force-reset && npm run db:seed"
+    "db:reset": "prisma db push --force-reset && npm run db:seed",
+    "db:clean": "tsx scripts/reset-database.ts",
+    "db:fresh": "tsx scripts/reset-database.ts && npm run db:push",
+    "db:setup": "npm run db:push && npm run db:seed"
+
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.10.0",
