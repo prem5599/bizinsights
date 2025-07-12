@@ -2,6 +2,7 @@
 import type { Metadata } from "next"
 import "./globals.css"
 import { AuthProvider } from "@/components/providers/AuthProvider"
+import { ClientOnly } from "@/components/providers/ClientOnly"
 
 export const metadata: Metadata = {
   title: "BizInsights - Simple Analytics Dashboard",
@@ -14,11 +15,16 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
-      <body className="min-h-screen bg-slate-50 antialiased">
-        <AuthProvider>
-          {children}
-        </AuthProvider>
+    <html lang="en" suppressHydrationWarning>
+      <body 
+        className="min-h-screen bg-slate-50 antialiased" 
+        suppressHydrationWarning
+      >
+        <ClientOnly>
+          <AuthProvider>
+            {children}
+          </AuthProvider>
+        </ClientOnly>
       </body>
     </html>
   )
