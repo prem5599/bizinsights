@@ -1,8 +1,15 @@
 // src/app/api/webhooks/stripe/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { handleStripeWebhook } from '@/lib/integrations/stripe'
-import crypto from 'crypto'
+import { 
+  verifyStripeWebhook, 
+  logWebhookEvent, 
+  updateWebhookEventStatus, 
+  triggerDashboardUpdate,
+  extractMetricFromWebhook,
+  validateWebhookPayload,
+  checkWebhookRateLimit
+} from '@/lib/webhooks'
 
 export async function POST(req: NextRequest) {
   try {
@@ -20,62 +27,112 @@ export async function POST(req: NextRequest) {
     // Get raw body for signature verification
     const rawBody = await req.text()
     
-    // Verify webhook signature
-    const event = verifyStripeWebhook(rawBody, signature, process.env.STRIPE_WEBHOOK_SECRET!)
-    
-    if (!event) {
-      console.error('Invalid Stripe webhook signature')
+    // Get organization ID from query params (set during webhook creation)
+    const { searchParams } = new URL(req.url)
+    const organizationId = searchParams.get('org')
+
+    if (!organizationId) {
+      console.error('No organization ID in webhook URL')
       return NextResponse.json(
-        { error: 'Invalid signature' },
-        { status: 401 }
+        { error: 'Organization ID required' },
+        { status: 400 }
       )
     }
 
-    console.log('Received Stripe webhook:', { 
-      type: event.type, 
-      id: event.id,
-      timestamp: new Date().toISOString()
+    // Find the integration
+    const integration = await prisma.integration.findFirst({
+      where: {
+        organizationId,
+        platform: 'stripe',
+        status: 'active'
+      }
     })
 
-    // Find integration based on Stripe account ID
-    const accountId = event.account || 'default'
-    const integration = await findStripeIntegration(accountId)
-
     if (!integration) {
-      console.error(`No active Stripe integration found for account ${accountId}`)
+      console.error(`No active Stripe integration found for org ${organizationId}`)
       return NextResponse.json(
         { error: 'Integration not found' },
         { status: 404 }
       )
     }
 
+    // Check rate limiting
+    if (!checkWebhookRateLimit(integration.id)) {
+      console.warn(`Rate limit exceeded for integration ${integration.id}`)
+      return NextResponse.json(
+        { error: 'Rate limit exceeded' },
+        { status: 429 }
+      )
+    }
+
+    // Verify webhook signature
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
+    if (!webhookSecret) {
+      console.error('STRIPE_WEBHOOK_SECRET not configured')
+      return NextResponse.json(
+        { error: 'Webhook secret not configured' },
+        { status: 500 }
+      )
+    }
+
+    let event
+    try {
+      event = verifyStripeWebhook(rawBody, signature, webhookSecret)
+    } catch (error) {
+      console.error('Stripe webhook verification failed:', error)
+      await logWebhookEvent(integration.id, 'unknown', 'signature_verification_failed', null)
+      return NextResponse.json(
+        { error: 'Webhook verification failed' },
+        { status: 401 }
+      )
+    }
+
+    // Validate webhook payload
+    const validation = validateWebhookPayload('stripe', event.type, event)
+    if (!validation.isValid) {
+      console.error('Invalid Stripe webhook payload:', validation.errors)
+      await logWebhookEvent(integration.id, event.type, 'invalid_payload', null)
+      return NextResponse.json(
+        { error: 'Invalid payload', details: validation.errors },
+        { status: 400 }
+      )
+    }
+
+    console.log('Received Stripe webhook:', { 
+      type: event.type, 
+      id: event.id,
+      organizationId,
+      timestamp: new Date().toISOString() 
+    })
+
     // Log webhook event
-    await logStripeWebhookEvent(integration.id, event.type, event.id, 'received')
+    await logWebhookEvent(integration.id, event.type, 'received', event.id)
 
     // Process webhook based on event type
-    const result = await processStripeWebhookEvent(integration.id, event)
+    const result = await processStripeWebhook(integration, event)
     
     if (result.success) {
       console.log(`Successfully processed Stripe webhook: ${event.type} for integration ${integration.id}`)
       
       // Update webhook event status
-      await updateStripeWebhookEventStatus(integration.id, event.type, event.id, 'processed')
+      await updateWebhookEventStatus(integration.id, event.type, event.id, 'processed')
       
       // Trigger real-time dashboard updates
-      await triggerDashboardUpdate(integration.organizationId, event.type, event.data)
+      await triggerDashboardUpdate(organizationId, event.type, event.data)
       
       return NextResponse.json({ 
         success: true, 
         message: 'Webhook processed successfully',
         eventType: event.type,
         eventId: event.id,
-        integrationId: integration.id
+        integrationId: integration.id,
+        processed: result.processed
       })
     } else {
       console.error(`Failed to process Stripe webhook: ${event.type}`, result.error)
       
       // Update webhook event status
-      await updateStripeWebhookEventStatus(integration.id, event.type, event.id, 'failed', result.error)
+      await updateWebhookEventStatus(integration.id, event.type, event.id, 'failed', result.error)
       
       return NextResponse.json(
         { error: result.error || 'Webhook processing failed' },
@@ -93,662 +150,447 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Process different Stripe webhook events
-async function processStripeWebhookEvent(
-  integrationId: string,
+/**
+ * Process different Stripe webhook events
+ */
+async function processStripeWebhook(
+  integration: any,
   event: any
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; processed?: number }> {
   try {
-    const { type, data } = event
-
-    switch (type) {
-      // Payment events
-      case 'charge.succeeded':
-        await handleChargeSucceeded(integrationId, data.object)
-        break
-      
-      case 'charge.failed':
-        await handleChargeFailed(integrationId, data.object)
-        break
-      
-      case 'charge.refunded':
-        await handleChargeRefunded(integrationId, data.object)
-        break
-      
+    switch (event.type) {
       case 'payment_intent.succeeded':
-        await handlePaymentIntentSucceeded(integrationId, data.object)
-        break
+        return await handlePaymentIntentSucceeded(integration, event)
       
       case 'payment_intent.payment_failed':
-        await handlePaymentIntentFailed(integrationId, data.object)
-        break
-
-      // Subscription events
+        return await handlePaymentIntentFailed(integration, event)
+      
+      case 'charge.succeeded':
+        return await handleChargeSucceeded(integration, event)
+      
+      case 'charge.failed':
+        return await handleChargeFailed(integration, event)
+      
+      case 'charge.dispute.created':
+        return await handleChargeDisputeCreated(integration, event)
+      
+      case 'customer.created':
+        return await handleCustomerCreated(integration, event)
+      
       case 'customer.subscription.created':
-        await handleSubscriptionCreated(integrationId, data.object)
-        break
+        return await handleSubscriptionCreated(integration, event)
       
       case 'customer.subscription.updated':
-        await handleSubscriptionUpdated(integrationId, data.object)
-        break
+        return await handleSubscriptionUpdated(integration, event)
       
       case 'customer.subscription.deleted':
-        await handleSubscriptionDeleted(integrationId, data.object)
-        break
+        return await handleSubscriptionDeleted(integration, event)
       
-      case 'invoice.payment_succeeded':
-        await handleInvoicePaymentSucceeded(integrationId, data.object)
-        break
+      case 'invoice.paid':
+        return await handleInvoicePaid(integration, event)
       
       case 'invoice.payment_failed':
-        await handleInvoicePaymentFailed(integrationId, data.object)
-        break
-
-      // Customer events
-      case 'customer.created':
-        await handleCustomerCreated(integrationId, data.object)
-        break
+        return await handleInvoicePaymentFailed(integration, event)
       
-      case 'customer.updated':
-        await handleCustomerUpdated(integrationId, data.object)
-        break
+      case 'checkout.session.completed':
+        return await handleCheckoutSessionCompleted(integration, event)
       
-      case 'customer.deleted':
-        await handleCustomerDeleted(integrationId, data.object)
-        break
-
-      // Dispute events
-      case 'charge.dispute.created':
-        await handleDisputeCreated(integrationId, data.object)
-        break
-      
-      case 'charge.dispute.updated':
-        await handleDisputeUpdated(integrationId, data.object)
-        break
-
-      // Payout events
-      case 'payout.created':
-        await handlePayoutCreated(integrationId, data.object)
-        break
-      
-      case 'payout.updated':
-        await handlePayoutUpdated(integrationId, data.object)
-        break
-
-      // Account events
-      case 'account.updated':
-        await handleAccountUpdated(integrationId, data.object)
-        break
-
       default:
-        console.log(`Unhandled Stripe webhook event: ${type}`)
-        return { success: true } // Don't fail for unhandled events
+        console.log(`Unhandled Stripe webhook event type: ${event.type}`)
+        return {
+          success: true,
+          processed: 0
+        }
     }
 
-    return { success: true }
   } catch (error) {
-    console.error(`Error processing Stripe webhook event ${event.type}:`, error)
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Unknown error' 
+    console.error(`Error processing Stripe webhook ${event.type}:`, error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
     }
   }
 }
 
-// Payment event handlers
-async function handleChargeSucceeded(integrationId: string, charge: any): Promise<void> {
-  const amount = charge.amount / 100
-  const fee = charge.application_fee_amount ? charge.application_fee_amount / 100 : 0
-
-  const dataPoints = [
-    {
-      integrationId,
-      metricType: 'stripe_revenue',
-      value: amount,
-      metadata: {
-        chargeId: charge.id,
-        currency: charge.currency,
-        customerId: charge.customer,
-        paymentMethod: charge.payment_method_details?.type,
-        feeAmount: fee,
-        netAmount: amount - fee,
-        webhook: true,
-        eventType: 'charge.succeeded'
-      },
-      dateRecorded: new Date(charge.created * 1000)
-    },
-    {
-      integrationId,
-      metricType: 'stripe_transactions',
-      value: 1,
-      metadata: {
-        chargeId: charge.id,
-        amount: amount,
-        currency: charge.currency,
-        type: 'charge_succeeded',
-        webhook: true
-      },
-      dateRecorded: new Date(charge.created * 1000)
-    }
-  ]
-
-  await prisma.dataPoint.createMany({
-    data: dataPoints,
-    skipDuplicates: true
-  })
-}
-
-async function handleChargeFailed(integrationId: string, charge: any): Promise<void> {
-  await prisma.dataPoint.create({
-    data: {
-      integrationId,
-      metricType: 'stripe_failed_charges',
-      value: 1,
-      metadata: {
-        chargeId: charge.id,
-        failureCode: charge.failure_code,
-        failureMessage: charge.failure_message,
-        amount: charge.amount / 100,
-        currency: charge.currency,
-        customerId: charge.customer,
-        webhook: true,
-        eventType: 'charge.failed'
-      },
-      dateRecorded: new Date(charge.created * 1000)
-    }
-  })
-}
-
-async function handleChargeRefunded(integrationId: string, charge: any): Promise<void> {
-  const refundAmount = charge.amount_refunded / 100
-
-  await prisma.dataPoint.create({
-    data: {
-      integrationId,
-      metricType: 'stripe_refunds',
-      value: -refundAmount, // Negative to reduce revenue
-      metadata: {
-        chargeId: charge.id,
-        refundAmount: refundAmount,
-        currency: charge.currency,
-        customerId: charge.customer,
-        refundReason: charge.refunds?.data?.[0]?.reason,
-        webhook: true,
-        eventType: 'charge.refunded'
-      },
-      dateRecorded: new Date()
-    }
-  })
-}
-
-async function handlePaymentIntentSucceeded(integrationId: string, paymentIntent: any): Promise<void> {
-  const amount = paymentIntent.amount_received / 100
-
-  await prisma.dataPoint.create({
-    data: {
-      integrationId,
-      metricType: 'stripe_payment_intents',
-      value: amount,
-      metadata: {
-        paymentIntentId: paymentIntent.id,
-        currency: paymentIntent.currency,
-        customerId: paymentIntent.customer,
-        paymentMethod: paymentIntent.payment_method_types?.[0],
-        webhook: true,
-        eventType: 'payment_intent.succeeded'
-      },
-      dateRecorded: new Date(paymentIntent.created * 1000)
-    }
-  })
-}
-
-async function handlePaymentIntentFailed(integrationId: string, paymentIntent: any): Promise<void> {
-  await prisma.dataPoint.create({
-    data: {
-      integrationId,
-      metricType: 'stripe_failed_payment_intents',
-      value: 1,
-      metadata: {
-        paymentIntentId: paymentIntent.id,
-        failureCode: paymentIntent.last_payment_error?.code,
-        failureMessage: paymentIntent.last_payment_error?.message,
-        amount: paymentIntent.amount / 100,
-        currency: paymentIntent.currency,
-        customerId: paymentIntent.customer,
-        webhook: true,
-        eventType: 'payment_intent.payment_failed'
-      },
-      dateRecorded: new Date(paymentIntent.created * 1000)
-    }
-  })
-}
-
-// Subscription event handlers
-async function handleSubscriptionCreated(integrationId: string, subscription: any): Promise<void> {
-  const mrr = calculateMRR(subscription)
-
-  await prisma.dataPoint.create({
-    data: {
-      integrationId,
-      metricType: 'stripe_new_subscriptions',
-      value: 1,
-      metadata: {
-        subscriptionId: subscription.id,
-        customerId: subscription.customer,
-        status: subscription.status,
-        mrr: mrr,
-        planCount: subscription.items.data.length,
-        webhook: true,
-        eventType: 'customer.subscription.created'
-      },
-      dateRecorded: new Date(subscription.created * 1000)
-    }
-  })
-}
-
-async function handleSubscriptionUpdated(integrationId: string, subscription: any): Promise<void> {
-  const mrr = calculateMRR(subscription)
-
-  await prisma.dataPoint.create({
-    data: {
-      integrationId,
-      metricType: 'stripe_mrr',
-      value: mrr,
-      metadata: {
-        subscriptionId: subscription.id,
-        customerId: subscription.customer,
-        status: subscription.status,
-        planCount: subscription.items.data.length,
-        webhook: true,
-        eventType: 'customer.subscription.updated'
-      },
-      dateRecorded: new Date()
-    }
-  })
-}
-
-async function handleSubscriptionDeleted(integrationId: string, subscription: any): Promise<void> {
-  const mrr = calculateMRR(subscription)
-
-  await prisma.dataPoint.create({
-    data: {
-      integrationId,
-      metricType: 'stripe_cancelled_subscriptions',
-      value: 1,
-      metadata: {
-        subscriptionId: subscription.id,
-        customerId: subscription.customer,
-        cancelReason: subscription.cancellation_details?.reason,
-        lostMrr: mrr,
-        webhook: true,
-        eventType: 'customer.subscription.deleted'
-      },
-      dateRecorded: new Date()
-    }
-  })
-}
-
-async function handleInvoicePaymentSucceeded(integrationId: string, invoice: any): Promise<void> {
-  const amount = invoice.amount_paid / 100
-
-  await prisma.dataPoint.create({
-    data: {
-      integrationId,
-      metricType: 'stripe_subscription_revenue',
-      value: amount,
-      metadata: {
-        invoiceId: invoice.id,
-        subscriptionId: invoice.subscription,
-        customerId: invoice.customer,
-        currency: invoice.currency,
-        billingReason: invoice.billing_reason,
-        webhook: true,
-        eventType: 'invoice.payment_succeeded'
-      },
-      dateRecorded: new Date(invoice.created * 1000)
-    }
-  })
-}
-
-async function handleInvoicePaymentFailed(integrationId: string, invoice: any): Promise<void> {
-  await prisma.dataPoint.create({
-    data: {
-      integrationId,
-      metricType: 'stripe_failed_invoices',
-      value: 1,
-      metadata: {
-        invoiceId: invoice.id,
-        subscriptionId: invoice.subscription,
-        customerId: invoice.customer,
-        amount: invoice.amount_due / 100,
-        currency: invoice.currency,
-        webhook: true,
-        eventType: 'invoice.payment_failed'
-      },
-      dateRecorded: new Date(invoice.created * 1000)
-    }
-  })
-}
-
-// Customer event handlers
-async function handleCustomerCreated(integrationId: string, customer: any): Promise<void> {
-  await prisma.dataPoint.create({
-    data: {
-      integrationId,
-      metricType: 'stripe_new_customers',
-      value: 1,
-      metadata: {
-        customerId: customer.id,
-        email: customer.email,
-        name: customer.name,
-        webhook: true,
-        eventType: 'customer.created'
-      },
-      dateRecorded: new Date(customer.created * 1000)
-    }
-  })
-}
-
-async function handleCustomerUpdated(integrationId: string, customer: any): Promise<void> {
-  // Track customer updates for analytics
-  await prisma.dataPoint.create({
-    data: {
-      integrationId,
-      metricType: 'stripe_customer_updates',
-      value: 1,
-      metadata: {
-        customerId: customer.id,
-        email: customer.email,
-        name: customer.name,
-        webhook: true,
-        eventType: 'customer.updated'
-      },
-      dateRecorded: new Date()
-    }
-  })
-}
-
-async function handleCustomerDeleted(integrationId: string, customer: any): Promise<void> {
-  await prisma.dataPoint.create({
-    data: {
-      integrationId,
-      metricType: 'stripe_deleted_customers',
-      value: 1,
-      metadata: {
-        customerId: customer.id,
-        webhook: true,
-        eventType: 'customer.deleted'
-      },
-      dateRecorded: new Date()
-    }
-  })
-}
-
-// Dispute event handlers
-async function handleDisputeCreated(integrationId: string, dispute: any): Promise<void> {
-  await prisma.dataPoint.create({
-    data: {
-      integrationId,
-      metricType: 'stripe_disputes',
-      value: 1,
-      metadata: {
-        disputeId: dispute.id,
-        chargeId: dispute.charge,
-        amount: dispute.amount / 100,
-        currency: dispute.currency,
-        reason: dispute.reason,
-        status: dispute.status,
-        webhook: true,
-        eventType: 'charge.dispute.created'
-      },
-      dateRecorded: new Date(dispute.created * 1000)
-    }
-  })
-}
-
-async function handleDisputeUpdated(integrationId: string, dispute: any): Promise<void> {
-  await prisma.dataPoint.create({
-    data: {
-      integrationId,
-      metricType: 'stripe_dispute_updates',
-      value: 1,
-      metadata: {
-        disputeId: dispute.id,
-        chargeId: dispute.charge,
-        status: dispute.status,
-        reason: dispute.reason,
-        webhook: true,
-        eventType: 'charge.dispute.updated'
-      },
-      dateRecorded: new Date()
-    }
-  })
-}
-
-// Payout event handlers
-async function handlePayoutCreated(integrationId: string, payout: any): Promise<void> {
-  await prisma.dataPoint.create({
-    data: {
-      integrationId,
-      metricType: 'stripe_payouts',
-      value: payout.amount / 100,
-      metadata: {
-        payoutId: payout.id,
-        currency: payout.currency,
-        status: payout.status,
-        method: payout.method,
-        type: payout.type,
-        webhook: true,
-        eventType: 'payout.created'
-      },
-      dateRecorded: new Date(payout.created * 1000)
-    }
-  })
-}
-
-async function handlePayoutUpdated(integrationId: string, payout: any): Promise<void> {
-  await prisma.dataPoint.create({
-    data: {
-      integrationId,
-      metricType: 'stripe_payout_updates',
-      value: 1,
-      metadata: {
-        payoutId: payout.id,
-        status: payout.status,
-        failureCode: payout.failure_code,
-        webhook: true,
-        eventType: 'payout.updated'
-      },
-      dateRecorded: new Date()
-    }
-  })
-}
-
-// Account event handlers
-async function handleAccountUpdated(integrationId: string, account: any): Promise<void> {
-  // Update integration metadata with account information
-  await prisma.integration.update({
-    where: { id: integrationId },
-    data: {
-      lastSyncAt: new Date()
-    }
-  })
-}
-
-// Utility functions
-function verifyStripeWebhook(payload: string, signature: string, secret: string): any | null {
+/**
+ * Handle successful payment intent
+ */
+async function handlePaymentIntentSucceeded(integration: any, event: any) {
   try {
-    const elements = signature.split(',')
-    const signatureElements: Record<string, string> = {}
+    const paymentIntent = event.data.object
+    const amount = paymentIntent.amount / 100 // Convert cents to dollars
     
-    for (const element of elements) {
-      const [key, value] = element.split('=')
-      signatureElements[key] = value
-    }
-    
-    const timestamp = signatureElements.t
-    const expectedSignature = signatureElements.v1
-    
-    if (!timestamp || !expectedSignature) {
-      return null
-    }
-    
-    // Check timestamp (reject events older than 5 minutes)
-    const timestampNumber = parseInt(timestamp, 10)
-    const currentTime = Math.floor(Date.now() / 1000)
-    if (currentTime - timestampNumber > 300) {
-      console.error('Webhook timestamp too old')
-      return null
-    }
-    
-    // Verify signature
-    const signedPayload = `${timestamp}.${payload}`
-    const expectedSignatureBuffer = crypto
-      .createHmac('sha256', secret)
-      .update(signedPayload, 'utf8')
-      .digest('hex')
-    
-    const signatureBuffer = Buffer.from(expectedSignature, 'hex')
-    const expectedBuffer = Buffer.from(expectedSignatureBuffer, 'hex')
-    
-    if (!crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
-      return null
-    }
-    
-    // Parse and return event
-    return JSON.parse(payload)
-  } catch (error) {
-    console.error('Stripe webhook verification error:', error)
-    return null
-  }
-}
-
-async function findStripeIntegration(accountId: string) {
-  return await prisma.integration.findFirst({
-    where: {
-      platform: 'stripe',
-      status: 'active',
-      OR: [
-        { platformAccountId: accountId },
-        { platformAccountId: null } // Default account
-      ]
-    },
-    include: {
-      organization: true
-    }
-  })
-}
-
-function calculateMRR(subscription: any): number {
-  let mrr = 0
-  
-  for (const item of subscription.items.data) {
-    const amount = item.price.unit_amount / 100
-    const interval = item.price.recurring.interval
-    
-    // Convert to monthly amount
-    switch (interval) {
-      case 'month':
-        mrr += amount
-        break
-      case 'year':
-        mrr += amount / 12
-        break
-      case 'week':
-        mrr += amount * 4.33 // Average weeks per month
-        break
-      case 'day':
-        mrr += amount * 30 // Average days per month
-        break
-    }
-  }
-  
-  return mrr
-}
-
-async function logStripeWebhookEvent(
-  integrationId: string,
-  eventType: string,
-  eventId: string,
-  status: string
-): Promise<void> {
-  try {
     await prisma.dataPoint.create({
       data: {
-        integrationId,
-        metricType: 'stripe_webhook_event',
+        integrationId: integration.id,
+        metricType: 'revenue',
+        value: amount,
+        metadata: {
+          paymentIntentId: paymentIntent.id,
+          currency: paymentIntent.currency,
+          customerId: paymentIntent.customer,
+          paymentMethod: paymentIntent.payment_method_types?.[0],
+          status: paymentIntent.status
+        },
+        dateRecorded: new Date(event.created * 1000)
+      }
+    })
+
+    return {
+      success: true,
+      processed: 1
+    }
+  } catch (error) {
+    throw error
+  }
+}
+
+/**
+ * Handle failed payment intent
+ */
+async function handlePaymentIntentFailed(integration: any, event: any) {
+  try {
+    const paymentIntent = event.data.object
+    
+    await prisma.dataPoint.create({
+      data: {
+        integrationId: integration.id,
+        metricType: 'payment_failed',
+        value: paymentIntent.amount / 100,
+        metadata: {
+          paymentIntentId: paymentIntent.id,
+          currency: paymentIntent.currency,
+          customerId: paymentIntent.customer,
+          failureCode: paymentIntent.last_payment_error?.code,
+          failureMessage: paymentIntent.last_payment_error?.message
+        },
+        dateRecorded: new Date(event.created * 1000)
+      }
+    })
+
+    return {
+      success: true,
+      processed: 1
+    }
+  } catch (error) {
+    throw error
+  }
+}
+
+/**
+ * Handle successful charge
+ */
+async function handleChargeSucceeded(integration: any, event: any) {
+  try {
+    const charge = event.data.object
+    
+    await prisma.dataPoint.create({
+      data: {
+        integrationId: integration.id,
+        metricType: 'charge_succeeded',
+        value: charge.amount / 100,
+        metadata: {
+          chargeId: charge.id,
+          currency: charge.currency,
+          customerId: charge.customer,
+          paymentMethodType: charge.payment_method_details?.type,
+          receiptUrl: charge.receipt_url
+        },
+        dateRecorded: new Date(event.created * 1000)
+      }
+    })
+
+    return {
+      success: true,
+      processed: 1
+    }
+  } catch (error) {
+    throw error
+  }
+}
+
+/**
+ * Handle failed charge
+ */
+async function handleChargeFailed(integration: any, event: any) {
+  try {
+    const charge = event.data.object
+    
+    await prisma.dataPoint.create({
+      data: {
+        integrationId: integration.id,
+        metricType: 'charge_failed',
+        value: charge.amount / 100,
+        metadata: {
+          chargeId: charge.id,
+          currency: charge.currency,
+          customerId: charge.customer,
+          failureCode: charge.failure_code,
+          failureMessage: charge.failure_message
+        },
+        dateRecorded: new Date(event.created * 1000)
+      }
+    })
+
+    return {
+      success: true,
+      processed: 1
+    }
+  } catch (error) {
+    throw error
+  }
+}
+
+/**
+ * Handle charge dispute creation
+ */
+async function handleChargeDisputeCreated(integration: any, event: any) {
+  try {
+    const dispute = event.data.object
+    
+    await prisma.dataPoint.create({
+      data: {
+        integrationId: integration.id,
+        metricType: 'dispute_created',
+        value: dispute.amount / 100,
+        metadata: {
+          disputeId: dispute.id,
+          chargeId: dispute.charge,
+          reason: dispute.reason,
+          status: dispute.status,
+          currency: dispute.currency
+        },
+        dateRecorded: new Date(event.created * 1000)
+      }
+    })
+
+    return {
+      success: true,
+      processed: 1
+    }
+  } catch (error) {
+    throw error
+  }
+}
+
+/**
+ * Handle customer creation
+ */
+async function handleCustomerCreated(integration: any, event: any) {
+  try {
+    const customer = event.data.object
+    
+    await prisma.dataPoint.create({
+      data: {
+        integrationId: integration.id,
+        metricType: 'customers',
         value: 1,
         metadata: {
-          eventType,
-          eventId,
-          status,
-          timestamp: new Date().toISOString()
+          customerId: customer.id,
+          email: customer.email,
+          name: customer.name,
+          description: customer.description
         },
-        dateRecorded: new Date()
+        dateRecorded: new Date(event.created * 1000)
       }
     })
+
+    return {
+      success: true,
+      processed: 1
+    }
   } catch (error) {
-    console.error('Failed to log Stripe webhook event:', error)
+    throw error
   }
 }
 
-async function updateStripeWebhookEventStatus(
-  integrationId: string,
-  eventType: string,
-  eventId: string,
-  status: string,
-  error?: string
-): Promise<void> {
+/**
+ * Handle subscription creation
+ */
+async function handleSubscriptionCreated(integration: any, event: any) {
   try {
+    const subscription = event.data.object
+    
     await prisma.dataPoint.create({
       data: {
-        integrationId,
-        metricType: 'stripe_webhook_status',
-        value: status === 'processed' ? 1 : 0,
+        integrationId: integration.id,
+        metricType: 'subscription_created',
+        value: subscription.items.data[0]?.price?.unit_amount / 100 || 0,
         metadata: {
-          eventType,
-          eventId,
-          status,
-          error,
-          processedAt: new Date().toISOString()
+          subscriptionId: subscription.id,
+          customerId: subscription.customer,
+          status: subscription.status,
+          priceId: subscription.items.data[0]?.price?.id,
+          interval: subscription.items.data[0]?.price?.recurring?.interval
         },
-        dateRecorded: new Date()
+        dateRecorded: new Date(event.created * 1000)
       }
     })
-  } catch (updateError) {
-    console.error('Failed to update Stripe webhook event status:', updateError)
+
+    return {
+      success: true,
+      processed: 1
+    }
+  } catch (error) {
+    throw error
   }
 }
 
-async function triggerDashboardUpdate(
-  organizationId: string,
-  eventType: string,
-  data: any
-): Promise<void> {
+/**
+ * Handle subscription update
+ */
+async function handleSubscriptionUpdated(integration: any, event: any) {
   try {
-    console.log(`Dashboard update triggered for org ${organizationId}:`, {
-      eventType,
-      timestamp: new Date().toISOString()
-    })
-
-    // Create notification data point
+    const subscription = event.data.object
+    
     await prisma.dataPoint.create({
       data: {
-        integrationId: 'system',
-        metricType: 'dashboard_update',
+        integrationId: integration.id,
+        metricType: 'subscription_updated',
+        value: subscription.items.data[0]?.price?.unit_amount / 100 || 0,
+        metadata: {
+          subscriptionId: subscription.id,
+          customerId: subscription.customer,
+          status: subscription.status,
+          priceId: subscription.items.data[0]?.price?.id
+        },
+        dateRecorded: new Date(event.created * 1000)
+      }
+    })
+
+    return {
+      success: true,
+      processed: 1
+    }
+  } catch (error) {
+    throw error
+  }
+}
+
+/**
+ * Handle subscription deletion
+ */
+async function handleSubscriptionDeleted(integration: any, event: any) {
+  try {
+    const subscription = event.data.object
+    
+    await prisma.dataPoint.create({
+      data: {
+        integrationId: integration.id,
+        metricType: 'subscription_cancelled',
         value: 1,
         metadata: {
-          organizationId,
-          eventType,
-          source: 'stripe_webhook',
-          triggeredAt: new Date().toISOString()
+          subscriptionId: subscription.id,
+          customerId: subscription.customer,
+          canceledAt: subscription.canceled_at,
+          cancelAtPeriodEnd: subscription.cancel_at_period_end
         },
-        dateRecorded: new Date()
+        dateRecorded: new Date(event.created * 1000)
       }
     })
 
+    return {
+      success: true,
+      processed: 1
+    }
   } catch (error) {
-    console.error('Failed to trigger dashboard update:', error)
+    throw error
+  }
+}
+
+/**
+ * Handle invoice payment success
+ */
+async function handleInvoicePaid(integration: any, event: any) {
+  try {
+    const invoice = event.data.object
+    
+    await prisma.dataPoint.create({
+      data: {
+        integrationId: integration.id,
+        metricType: 'invoice_paid',
+        value: invoice.amount_paid / 100,
+        metadata: {
+          invoiceId: invoice.id,
+          customerId: invoice.customer,
+          subscriptionId: invoice.subscription,
+          currency: invoice.currency,
+          paidAt: invoice.status_transitions?.paid_at
+        },
+        dateRecorded: new Date(event.created * 1000)
+      }
+    })
+
+    return {
+      success: true,
+      processed: 1
+    }
+  } catch (error) {
+    throw error
+  }
+}
+
+/**
+ * Handle invoice payment failure
+ */
+async function handleInvoicePaymentFailed(integration: any, event: any) {
+  try {
+    const invoice = event.data.object
+    
+    await prisma.dataPoint.create({
+      data: {
+        integrationId: integration.id,
+        metricType: 'invoice_payment_failed',
+        value: invoice.amount_due / 100,
+        metadata: {
+          invoiceId: invoice.id,
+          customerId: invoice.customer,
+          subscriptionId: invoice.subscription,
+          currency: invoice.currency,
+          attemptCount: invoice.attempt_count
+        },
+        dateRecorded: new Date(event.created * 1000)
+      }
+    })
+
+    return {
+      success: true,
+      processed: 1
+    }
+  } catch (error) {
+    throw error
+  }
+}
+
+/**
+ * Handle checkout session completion
+ */
+async function handleCheckoutSessionCompleted(integration: any, event: any) {
+  try {
+    const session = event.data.object
+    
+    await prisma.dataPoint.create({
+      data: {
+        integrationId: integration.id,
+        metricType: 'checkout_completed',
+        value: session.amount_total / 100,
+        metadata: {
+          sessionId: session.id,
+          customerId: session.customer,
+          paymentIntentId: session.payment_intent,
+          currency: session.currency,
+          mode: session.mode
+        },
+        dateRecorded: new Date(event.created * 1000)
+      }
+    })
+
+    return {
+      success: true,
+      processed: 1
+    }
+  } catch (error) {
+    throw error
   }
 }
 

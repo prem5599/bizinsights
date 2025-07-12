@@ -309,20 +309,58 @@ export async function POST(req: NextRequest) {
     const existingIntegration = await prisma.integration.findFirst({
       where: {
         organizationId: organizationId,
-        platform: 'shopify',
-        platformAccountId: cleanShopDomain
+        platform: 'shopify'
       }
     })
 
     if (existingIntegration) {
-      console.log('❌ Integration already exists:', existingIntegration.id)
-      return NextResponse.json(
-        { error: 'Shopify integration already exists for this store' },
-        { status: 409 }
-      )
+      console.log('🔄 Integration already exists, updating it...', existingIntegration.id)
+      
+      // Update existing integration instead of creating new one
+      const updatedIntegration = await prisma.integration.update({
+        where: { id: existingIntegration.id },
+        data: {
+          platformAccountId: cleanShopDomain,
+          accessToken: cleanAccessToken,
+          status: 'active',
+          lastSyncAt: null,
+          updatedAt: new Date()
+        }
+      })
+      
+      console.log('✅ Integration updated successfully:', updatedIntegration.id)
+      
+      // Create sample data for the updated integration
+      console.log('📊 Creating sample data for updated integration...')
+      try {
+        await createSampleShopifyData(updatedIntegration.id)
+        console.log('✅ Sample data created')
+      } catch (dataError) {
+        console.error('⚠️ Error creating sample data (non-critical):', dataError)
+      }
+      
+      console.log('🎉 Integration update completed successfully')
+
+      return NextResponse.json({
+        success: true,
+        integration: {
+          id: updatedIntegration.id,
+          platform: 'shopify',
+          platformAccountId: cleanShopDomain,
+          status: 'active',
+          lastSyncAt: updatedIntegration.lastSyncAt,
+          createdAt: updatedIntegration.createdAt,
+          updatedAt: updatedIntegration.updatedAt
+        },
+        organization: {
+          id: organizationId,
+          name: organizationName
+        },
+        message: 'Shopify store updated successfully'
+      })
     }
 
-    console.log('✅ No existing integration found')
+    console.log('✅ No existing integration found, creating new one')
 
     // Create the integration
     console.log('💾 Creating integration...')

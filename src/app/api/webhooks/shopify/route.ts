@@ -1,8 +1,15 @@
 // src/app/api/webhooks/shopify/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { handleShopifyWebhook } from '@/lib/integrations/shopify'
-import crypto from 'crypto'
+import { 
+  verifyShopifyWebhook, 
+  logWebhookEvent, 
+  updateWebhookEventStatus, 
+  triggerDashboardUpdate,
+  extractMetricFromWebhook,
+  validateWebhookPayload,
+  checkWebhookRateLimit
+} from '@/lib/webhooks'
 
 export async function POST(req: NextRequest) {
   try {
@@ -53,8 +60,26 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Check rate limiting
+    if (!checkWebhookRateLimit(integration.id)) {
+      console.warn(`Rate limit exceeded for integration ${integration.id}`)
+      return NextResponse.json(
+        { error: 'Rate limit exceeded' },
+        { status: 429 }
+      )
+    }
+
     // Verify webhook signature
-    if (!verifyShopifyWebhook(rawBody, hmacHeader, process.env.SHOPIFY_WEBHOOK_SECRET!)) {
+    const webhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET
+    if (!webhookSecret) {
+      console.error('SHOPIFY_WEBHOOK_SECRET not configured')
+      return NextResponse.json(
+        { error: 'Webhook secret not configured' },
+        { status: 500 }
+      )
+    }
+
+    if (!verifyShopifyWebhook(rawBody, hmacHeader, webhookSecret)) {
       console.error('Invalid webhook signature from:', shopDomain)
       await logWebhookEvent(integration.id, topic, 'signature_verification_failed', null)
       return NextResponse.json(
@@ -76,12 +101,23 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Validate webhook payload
+    const validation = validateWebhookPayload('shopify', topic, webhookData)
+    if (!validation.isValid) {
+      console.error('Invalid webhook payload:', validation.errors)
+      await logWebhookEvent(integration.id, topic, 'invalid_payload', null)
+      return NextResponse.json(
+        { error: 'Invalid payload', details: validation.errors },
+        { status: 400 }
+      )
+    }
+
     // Log webhook event
     const externalId = webhookData.id?.toString() || 'unknown'
     await logWebhookEvent(integration.id, topic, 'received', externalId)
 
     // Process webhook based on topic
-    const result = await handleShopifyWebhook(integration.id, topic, webhookData)
+    const result = await processShopifyWebhook(integration, topic, webhookData)
     
     if (result.success) {
       console.log(`Successfully processed webhook: ${topic} for integration ${integration.id}`)
@@ -96,7 +132,8 @@ export async function POST(req: NextRequest) {
         success: true, 
         message: 'Webhook processed successfully',
         topic,
-        integrationId: integration.id
+        integrationId: integration.id,
+        processed: result.processed
       })
     } else {
       console.error(`Failed to process webhook: ${topic}`, result.error)
@@ -120,283 +157,342 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Handle special webhook topics
-async function handleSpecialWebhookTopics(
-  integrationId: string,
+/**
+ * Process different Shopify webhook events
+ */
+async function processShopifyWebhook(
+  integration: any,
   topic: string,
-  data: any
-): Promise<{ success: boolean; error?: string }> {
+  webhookData: any
+): Promise<{ success: boolean; error?: string; processed?: number }> {
   try {
     switch (topic) {
+      case 'orders/create':
+        return await handleOrderCreate(integration, webhookData)
+      
+      case 'orders/updated':
+        return await handleOrderUpdate(integration, webhookData)
+      
+      case 'orders/paid':
+        return await handleOrderPaid(integration, webhookData)
+      
+      case 'orders/cancelled':
+        return await handleOrderCancelled(integration, webhookData)
+      
+      case 'orders/fulfilled':
+        return await handleOrderFulfilled(integration, webhookData)
+      
+      case 'orders/refunded':
+        return await handleOrderRefunded(integration, webhookData)
+      
       case 'app/uninstalled':
-        await handleAppUninstallation(integrationId)
-        break
+        return await handleAppUninstalled(integration, webhookData)
       
       case 'shop/update':
-        await handleShopUpdate(integrationId, data)
-        break
+        return await handleShopUpdate(integration, webhookData)
       
-      case 'gdpr/customers_data_request':
-        await handleCustomersDataRequest(integrationId, data)
-        break
+      case 'customers/create':
+        return await handleCustomerCreate(integration, webhookData)
       
-      case 'gdpr/customers_redact':
-        await handleCustomersRedact(integrationId, data)
-        break
-      
-      case 'gdpr/shop_redact':
-        await handleShopRedact(integrationId, data)
-        break
+      default:
+        console.log(`Unhandled webhook topic: ${topic}`)
+        return {
+          success: true,
+          processed: 0
+        }
     }
 
-    return { success: true }
   } catch (error) {
-    console.error(`Error handling special webhook topic ${topic}:`, error)
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Unknown error' 
+    console.error(`Error processing webhook ${topic}:`, error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
     }
   }
 }
 
-// Handle app uninstallation
-async function handleAppUninstallation(integrationId: string): Promise<void> {
-  console.log(`Handling app uninstallation for integration ${integrationId}`)
-  
-  const integration = await prisma.integration.update({
-    where: { id: integrationId },
-    data: {
-      status: 'inactive',
-      lastSyncAt: new Date(),
-      // Store uninstall metadata
-      platformAccountId: null,
-      accessToken: null,
-      refreshToken: null
-    },
-    include: {
-      organization: true
-    }
-  })
-
-  // Notify organization admins
-  await notifyIntegrationDisconnected(integration.organizationId, 'shopify', 'app_uninstalled')
-}
-
-// Handle shop update
-async function handleShopUpdate(integrationId: string, shopData: any): Promise<void> {
-  console.log(`Handling shop update for integration ${integrationId}`)
-  
-  // Update integration metadata with new shop information
-  await prisma.integration.update({
-    where: { id: integrationId },
-    data: {
-      lastSyncAt: new Date()
-    }
-  })
-}
-
-// GDPR handlers
-async function handleCustomersDataRequest(integrationId: string, data: any): Promise<void> {
-  console.log(`GDPR customers data request for integration ${integrationId}`, data)
-  
-  // In a real implementation, you would:
-  // 1. Collect all customer data from your database
-  // 2. Generate a report with all stored customer information
-  // 3. Send the report to the customer
-  // 4. Log the request for compliance purposes
-  
-  await prisma.dataPoint.create({
-    data: {
-      integrationId,
-      metricType: 'gdpr_data_request',
-      value: 1,
-      metadata: {
-        customerId: data.customer?.id,
-        customerEmail: data.customer?.email,
-        requestedAt: new Date().toISOString()
-      },
-      dateRecorded: new Date()
-    }
-  })
-}
-
-async function handleCustomersRedact(integrationId: string, data: any): Promise<void> {
-  console.log(`GDPR customers redact for integration ${integrationId}`, data)
-  
-  // In a real implementation, you would:
-  // 1. Remove or anonymize all customer data
-  // 2. Update related records to remove personal information
-  // 3. Log the redaction for compliance purposes
-  
-  const customerId = data.customer?.id?.toString()
-  
-  if (customerId) {
-    // Remove or anonymize customer data points
-    await prisma.dataPoint.updateMany({
-      where: {
-        integrationId,
-        metadata: {
-          path: ['customerId'],
-          equals: customerId
-        }
-      },
-      data: {
-        metadata: {
-          customerId: '[REDACTED]',
-          customerEmail: '[REDACTED]',
-          redactedAt: new Date().toISOString()
-        }
-      }
-    })
-  }
-}
-
-async function handleShopRedact(integrationId: string, data: any): Promise<void> {
-  console.log(`GDPR shop redact for integration ${integrationId}`, data)
-  
-  // In a real implementation, you would:
-  // 1. Remove all shop data and related customer information
-  // 2. Deactivate the integration permanently
-  // 3. Notify organization owners
-  
-  await prisma.integration.update({
-    where: { id: integrationId },
-    data: {
-      status: 'inactive',
-      accessToken: null,
-      refreshToken: null,
-      platformAccountId: '[REDACTED]'
-    }
-  })
-}
-
-// Utility functions
-function verifyShopifyWebhook(body: string, hmacHeader: string, secret: string): boolean {
+/**
+ * Handle order creation webhook
+ */
+async function handleOrderCreate(integration: any, orderData: any) {
   try {
-    const hmac = crypto.createHmac('sha256', secret)
-    hmac.update(body, 'utf8')
-    const calculatedHmac = hmac.digest('base64')
+    const metrics = extractMetricFromWebhook('shopify', 'orders/create', orderData)
     
-    return crypto.timingSafeEqual(
-      Buffer.from(hmacHeader, 'base64'),
-      Buffer.from(calculatedHmac, 'base64')
-    )
+    // Store metrics as data points
+    for (const metric of metrics) {
+      await prisma.dataPoint.create({
+        data: {
+          integrationId: integration.id,
+          metricType: metric.metricType,
+          value: metric.value,
+          metadata: metric.metadata,
+          dateRecorded: metric.dateRecorded
+        }
+      })
+    }
+
+    return {
+      success: true,
+      processed: metrics.length
+    }
   } catch (error) {
-    console.error('HMAC verification error:', error)
-    return false
+    throw error
   }
 }
 
-async function logWebhookEvent(
-  integrationId: string,
-  topic: string,
-  status: string,
-  externalId: string | null
-): Promise<void> {
+/**
+ * Handle order payment webhook
+ */
+async function handleOrderPaid(integration: any, orderData: any) {
   try {
-    // Create a simple log in data points for webhook events
+    const metrics = extractMetricFromWebhook('shopify', 'orders/paid', orderData)
+    
+    // Store metrics as data points
+    for (const metric of metrics) {
+      await prisma.dataPoint.create({
+        data: {
+          integrationId: integration.id,
+          metricType: metric.metricType,
+          value: metric.value,
+          metadata: metric.metadata,
+          dateRecorded: metric.dateRecorded
+        }
+      })
+    }
+
+    return {
+      success: true,
+      processed: metrics.length
+    }
+  } catch (error) {
+    throw error
+  }
+}
+
+/**
+ * Handle order update webhook
+ */
+async function handleOrderUpdate(integration: any, orderData: any) {
+  try {
+    // Update existing order data point
     await prisma.dataPoint.create({
       data: {
-        integrationId,
-        metricType: 'webhook_event',
+        integrationId: integration.id,
+        metricType: 'order_updated',
         value: 1,
         metadata: {
-          topic,
-          status,
-          externalId,
-          timestamp: new Date().toISOString()
+          orderId: orderData.id,
+          orderNumber: orderData.order_number,
+          status: orderData.financial_status,
+          updatedAt: orderData.updated_at
         },
-        dateRecorded: new Date()
+        dateRecorded: new Date(orderData.updated_at || Date.now())
       }
     })
+
+    return {
+      success: true,
+      processed: 1
+    }
   } catch (error) {
-    console.error('Failed to log webhook event:', error)
+    throw error
   }
 }
 
-async function updateWebhookEventStatus(
-  integrationId: string,
-  topic: string,
-  externalId: string,
-  status: string,
-  error?: string
-): Promise<void> {
+/**
+ * Handle order cancellation webhook
+ */
+async function handleOrderCancelled(integration: any, orderData: any) {
   try {
-    // Update the webhook event status
     await prisma.dataPoint.create({
       data: {
-        integrationId,
-        metricType: 'webhook_status',
-        value: status === 'processed' ? 1 : 0,
+        integrationId: integration.id,
+        metricType: 'order_cancelled',
+        value: parseFloat(orderData.total_price || '0'),
         metadata: {
-          topic,
-          status,
-          externalId,
-          error,
-          processedAt: new Date().toISOString()
+          orderId: orderData.id,
+          orderNumber: orderData.order_number,
+          cancelReason: orderData.cancel_reason,
+          cancelledAt: orderData.cancelled_at
         },
-        dateRecorded: new Date()
+        dateRecorded: new Date(orderData.cancelled_at || Date.now())
       }
     })
-  } catch (updateError) {
-    console.error('Failed to update webhook event status:', updateError)
+
+    return {
+      success: true,
+      processed: 1
+    }
+  } catch (error) {
+    throw error
   }
 }
 
-async function triggerDashboardUpdate(
-  organizationId: string,
-  eventType: string,
-  data: any
-): Promise<void> {
+/**
+ * Handle order fulfillment webhook
+ */
+async function handleOrderFulfilled(integration: any, orderData: any) {
   try {
-    // This could integrate with WebSocket connections, Server-Sent Events,
-    // or a real-time service like Pusher/Ably for live dashboard updates
-    
-    console.log(`Dashboard update triggered for org ${organizationId}:`, {
-      eventType,
-      dataType: typeof data,
-      timestamp: new Date().toISOString()
-    })
-
-    // In a production setup, you might:
-    // 1. Send to a WebSocket service
-    // 2. Update a Redis cache for real-time data
-    // 3. Trigger a Server-Sent Event
-    // 4. Call a real-time notification service like Pusher
-    
-    // For now, we'll create a notification data point
     await prisma.dataPoint.create({
       data: {
-        integrationId: 'system',
-        metricType: 'dashboard_update',
+        integrationId: integration.id,
+        metricType: 'order_fulfilled',
         value: 1,
         metadata: {
-          organizationId,
-          eventType,
-          triggeredAt: new Date().toISOString()
+          orderId: orderData.id,
+          orderNumber: orderData.order_number,
+          fulfillmentStatus: orderData.fulfillment_status
         },
         dateRecorded: new Date()
       }
     })
 
+    return {
+      success: true,
+      processed: 1
+    }
   } catch (error) {
-    console.error('Failed to trigger dashboard update:', error)
+    throw error
   }
 }
 
+/**
+ * Handle order refund webhook
+ */
+async function handleOrderRefunded(integration: any, refundData: any) {
+  try {
+    await prisma.dataPoint.create({
+      data: {
+        integrationId: integration.id,
+        metricType: 'order_refunded',
+        value: parseFloat(refundData.refund?.amount || '0'),
+        metadata: {
+          orderId: refundData.order_id,
+          refundId: refundData.id,
+          refundAmount: refundData.refund?.amount,
+          reason: refundData.note
+        },
+        dateRecorded: new Date(refundData.created_at || Date.now())
+      }
+    })
+
+    return {
+      success: true,
+      processed: 1
+    }
+  } catch (error) {
+    throw error
+  }
+}
+
+/**
+ * Handle customer creation webhook
+ */
+async function handleCustomerCreate(integration: any, customerData: any) {
+  try {
+    await prisma.dataPoint.create({
+      data: {
+        integrationId: integration.id,
+        metricType: 'customers',
+        value: 1,
+        metadata: {
+          customerId: customerData.id,
+          email: customerData.email,
+          firstName: customerData.first_name,
+          lastName: customerData.last_name,
+          acceptsMarketing: customerData.accepts_marketing
+        },
+        dateRecorded: new Date(customerData.created_at || Date.now())
+      }
+    })
+
+    return {
+      success: true,
+      processed: 1
+    }
+  } catch (error) {
+    throw error
+  }
+}
+
+/**
+ * Handle shop update webhook
+ */
+async function handleShopUpdate(integration: any, shopData: any) {
+  try {
+    // Update integration metadata with shop info
+    await prisma.integration.update({
+      where: { id: integration.id },
+      data: {
+        metadata: {
+          ...(integration.metadata as any || {}),
+          shopInfo: {
+            name: shopData.name,
+            email: shopData.email,
+            domain: shopData.domain,
+            currency: shopData.currency,
+            timezone: shopData.timezone,
+            updatedAt: new Date().toISOString()
+          }
+        }
+      }
+    })
+
+    return {
+      success: true,
+      processed: 1
+    }
+  } catch (error) {
+    throw error
+  }
+}
+
+/**
+ * Handle app uninstallation webhook
+ */
+async function handleAppUninstalled(integration: any, webhookData: any) {
+  try {
+    // Deactivate the integration
+    await prisma.integration.update({
+      where: { id: integration.id },
+      data: {
+        status: 'inactive',
+        accessToken: null,
+        refreshToken: null,
+        metadata: {
+          ...(integration.metadata as any || {}),
+          uninstalledAt: new Date().toISOString(),
+          uninstallReason: 'app_uninstalled'
+        }
+      }
+    })
+
+    // Notify organization admins
+    await notifyIntegrationDisconnected(integration.organizationId, 'shopify', 'app_uninstalled')
+
+    return {
+      success: true,
+      processed: 1
+    }
+  } catch (error) {
+    throw error
+  }
+}
+
+/**
+ * Notify organization admins about integration disconnection
+ */
 async function notifyIntegrationDisconnected(
   organizationId: string,
   platform: string,
   reason: string
-): Promise<void> {
+) {
   try {
     // Get organization admins
     const admins = await prisma.organizationMember.findMany({
       where: {
         organizationId,
-        role: {
-          in: ['owner', 'admin']
-        }
+        role: { in: ['owner', 'admin'] }
       },
       include: {
         user: true,
@@ -410,18 +506,6 @@ async function notifyIntegrationDisconnected(
       adminCount: admins.length,
       timestamp: new Date().toISOString()
     })
-
-    // In a real implementation, send email notifications
-    for (const admin of admins) {
-      console.log(`Would notify ${admin.user.email} about ${platform} disconnection (${reason})`)
-      
-      // Example: await sendEmail({
-      //   to: admin.user.email,
-      //   subject: `${platform} integration disconnected`,
-      //   template: 'integration-disconnected',
-      //   data: { platform, reason, organizationName: admin.organization.name }
-      // })
-    }
 
     // Create notification data point
     await prisma.dataPoint.create({
@@ -439,6 +523,11 @@ async function notifyIntegrationDisconnected(
         dateRecorded: new Date()
       }
     })
+
+    // In a real implementation, send email notifications to admins
+    for (const admin of admins) {
+      console.log(`Would notify ${admin.user.email} about ${platform} disconnection (${reason})`)
+    }
 
   } catch (error) {
     console.error('Failed to notify admins:', error)

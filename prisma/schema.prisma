@@ -1,4 +1,4 @@
-// prisma/schema.prisma - Updated with password field
+// prisma/schema.prisma - Updated with WebhookEvent model
 generator client {
   provider = "prisma-client-js"
 }
@@ -111,11 +111,13 @@ model Integration {
   tokenExpiresAt     DateTime?
   status             String    @default("active")
   lastSyncAt         DateTime?
+  metadata           Json      @default("{}")
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  dataPoints   DataPoint[]
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  dataPoints     DataPoint[]
+  webhookEvents  WebhookEvent[]
 
   @@unique([organizationId, platform])
 }
@@ -132,6 +134,23 @@ model DataPoint {
   integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
 
   @@index([integrationId, metricType, dateRecorded])
+}
+
+model WebhookEvent {
+  id             String    @id @default(cuid())
+  integrationId  String
+  topic          String    // webhook topic/event type
+  status         String    // received, processed, failed, signature_verification_failed, invalid_json
+  externalId     String?   // external event ID from the platform
+  error          String?   @db.Text
+  receivedAt     DateTime  @default(now())
+  processedAt    DateTime?
+  metadata       Json      @default("{}")
+
+  integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@index([integrationId, topic, receivedAt])
+  @@index([integrationId, status])
 }
 
 model Insight {
