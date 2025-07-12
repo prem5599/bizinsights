@@ -5,231 +5,54 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
 export async function GET(
-  request: NextRequest,
+  req: NextRequest,
   { params }: { params: { orgId: string } }
 ) {
   try {
     const session = await getServerSession(authOptions)
-    
     if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const { orgId } = params
 
-    // Handle temporary org ID for development
-    if (orgId === 'temp-org-id') {
-      // Return mock data for development
-      const mockData = {
-        metrics: {
-          revenue: {
-            current: 45000,
-            previous: 38000,
-            change: 18.4,
-            trend: 'up' as const
-          },
-          orders: {
-            current: 182,
-            previous: 156,
-            change: 16.7,
-            trend: 'up' as const
-          },
-          sessions: {
-            current: 2847,
-            previous: 2456,
-            change: 15.9,
-            trend: 'up' as const
-          },
-          customers: {
-            current: 145,
-            previous: 123,
-            change: 17.9,
-            trend: 'up' as const
-          },
-          conversion: {
-            current: 6.4,
-            previous: 6.1,
-            change: 4.9,
-            trend: 'up' as const
-          },
-          aov: {
-            current: 247.25,
-            previous: 243.59,
-            change: 1.5,
-            trend: 'up' as const
-          }
-        },
-        charts: {
-          revenue_trend: [
-            { date: '2024-01-01', total_revenue: 35000 },
-            { date: '2024-01-08', total_revenue: 42000 },
-            { date: '2024-01-15', total_revenue: 38000 },
-            { date: '2024-01-22', total_revenue: 45000 },
-            { date: '2024-01-29', total_revenue: 48000 },
-          ],
-          traffic_sources: [
-            { source: 'Organic Search', sessions: 1423 },
-            { source: 'Direct', sessions: 854 },
-            { source: 'Social Media', sessions: 427 },
-            { source: 'Paid Ads', sessions: 143 },
-          ]
-        },
-        insights: [
-          {
-            id: '1',
-            type: 'trend',
-            title: 'Revenue Growth Accelerating',
-            description: 'Your revenue has increased by 23% this month compared to last month, showing strong upward momentum.',
-            impactScore: 85,
-            isRead: false,
-            createdAt: new Date().toISOString()
-          },
-          {
-            id: '2',
-            type: 'recommendation',
-            title: 'Optimize Checkout Flow',
-            description: 'Cart abandonment rate is 68%. Consider simplifying your checkout process or adding exit-intent popups.',
-            impactScore: 72,
-            isRead: false,
-            createdAt: new Date(Date.now() - 3600000).toISOString()
-          },
-          {
-            id: '3',
-            type: 'anomaly',
-            title: 'Unusual Traffic Spike Detected',
-            description: 'Website traffic increased by 150% yesterday. Investigate the source to capitalize on this opportunity.',
-            impactScore: 90,
-            isRead: true,
-            createdAt: new Date(Date.now() - 86400000).toISOString()
-          }
-        ],
-        integrations: [
-          {
-            id: '1',
-            platform: 'shopify',
-            status: 'connected',
-            lastSyncAt: new Date().toISOString()
-          },
-          {
-            id: '2',
-            platform: 'stripe',
-            status: 'connected',
-            lastSyncAt: new Date().toISOString()
-          },
-          {
-            id: '3',
-            platform: 'google_analytics',
-            status: 'disconnected',
-            lastSyncAt: null
-          }
-        ],
-        hasRealData: false,
-        message: 'Demo data - Connect your integrations to see real analytics'
-      }
-
-      return NextResponse.json(mockData)
-    }
-
-    // Check if user has access to this organization
-    const organizationMember = await prisma.organizationMember.findFirst({
+    // Verify user has access to this organization
+    const member = await prisma.organizationMember.findFirst({
       where: {
         organizationId: orgId,
         userId: session.user.id
-      },
-      include: {
-        organization: true
       }
     })
 
-    if (!organizationMember) {
-      return NextResponse.json(
-        { error: 'Organization not found or access denied' },
-        { status: 403 }
-      )
+    if (!member) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
-    // Fetch real data from database
-    const [insights, integrations] = await Promise.all([
-      prisma.insight.findMany({
-        where: {
-          organizationId: orgId
-        },
-        orderBy: {
-          createdAt: 'desc'
-        },
-        take: 10
-      }),
-      prisma.integration.findMany({
-        where: {
-          organizationId: orgId
-        }
-      })
-    ])
+    // Get all active integrations for this organization
+    const integrations = await prisma.integration.findMany({
+      where: {
+        organizationId: orgId,
+        status: 'active'
+      }
+    })
 
-    // In a real implementation, you would:
-    // 1. Fetch actual metrics from your data warehouse
-    // 2. Calculate trends and changes
-    // 3. Generate charts data
-    // 4. Get real insights from AI service
+    // Get insights for this organization
+    const insights = await prisma.insight.findMany({
+      where: { organizationId: orgId },
+      orderBy: { createdAt: 'desc' },
+      take: 10
+    })
 
-    // For now, return mock data with real insights
+    // Calculate metrics from real data
+    const metrics = await calculateRealMetrics(orgId, integrations)
+    
+    // Get chart data from real integrations
+    const charts = await getRealChartData(orgId, integrations)
+    
+    // Prepare dashboard response
     const dashboardData = {
-      metrics: {
-        revenue: {
-          current: 45000,
-          previous: 38000,
-          change: 18.4,
-          trend: 'up' as const
-        },
-        orders: {
-          current: 182,
-          previous: 156,
-          change: 16.7,
-          trend: 'up' as const
-        },
-        sessions: {
-          current: 2847,
-          previous: 2456,
-          change: 15.9,
-          trend: 'up' as const
-        },
-        customers: {
-          current: 145,
-          previous: 123,
-          change: 17.9,
-          trend: 'up' as const
-        },
-        conversion: {
-          current: 6.4,
-          previous: 6.1,
-          change: 4.9,
-          trend: 'up' as const
-        },
-        aov: {
-          current: 247.25,
-          previous: 243.59,
-          change: 1.5,
-          trend: 'up' as const
-        }
-      },
-      charts: {
-        revenue_trend: [
-          { date: '2024-01-01', total_revenue: 35000 },
-          { date: '2024-01-08', total_revenue: 42000 },
-          { date: '2024-01-15', total_revenue: 38000 },
-          { date: '2024-01-22', total_revenue: 45000 },
-          { date: '2024-01-29', total_revenue: 48000 },
-        ],
-        traffic_sources: [
-          { source: 'Organic Search', sessions: 1423 },
-          { source: 'Direct', sessions: 854 },
-          { source: 'Social Media', sessions: 427 },
-          { source: 'Paid Ads', sessions: 143 },
-        ]
-      },
+      metrics,
+      charts,
       insights: insights.map(insight => ({
         id: insight.id,
         type: insight.type,
@@ -242,12 +65,12 @@ export async function GET(
       integrations: integrations.map(integration => ({
         id: integration.id,
         platform: integration.platform,
-        status: integration.isActive ? 'connected' : 'disconnected',
+        status: integration.status === 'active' ? 'connected' : 'disconnected',
         lastSyncAt: integration.lastSyncAt?.toISOString() || null
       })),
-      hasRealData: integrations.some(i => i.isActive),
-      message: integrations.some(i => i.isActive) 
-        ? 'Data from your connected integrations'
+      hasRealData: integrations.length > 0,
+      message: integrations.length > 0 
+        ? `Data from ${integrations.length} connected integration${integrations.length !== 1 ? 's' : ''}`
         : 'Connect your integrations to see real analytics'
     }
 
@@ -259,5 +82,205 @@ export async function GET(
       { error: 'Internal server error' },
       { status: 500 }
     )
+  }
+}
+
+/**
+ * Calculate real metrics from integration data
+ */
+async function calculateRealMetrics(organizationId: string, integrations: any[]) {
+  if (integrations.length === 0) {
+    // Return empty metrics if no integrations
+    return {
+      revenue: { current: 0, previous: 0, change: 0, trend: 'neutral' as const },
+      orders: { current: 0, previous: 0, change: 0, trend: 'neutral' as const },
+      sessions: { current: 0, previous: 0, change: 0, trend: 'neutral' as const },
+      customers: { current: 0, previous: 0, change: 0, trend: 'neutral' as const },
+      conversion: { current: 0, previous: 0, change: 0, trend: 'neutral' as const },
+      aov: { current: 0, previous: 0, change: 0, trend: 'neutral' as const }
+    }
+  }
+
+  // Get integration IDs
+  const integrationIds = integrations.map(i => i.id)
+  
+  // Define date ranges
+  const now = new Date()
+  const currentPeriodStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000) // Last 30 days
+  const previousPeriodStart = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000) // 30-60 days ago
+  const previousPeriodEnd = currentPeriodStart
+
+  // Get current period data
+  const currentData = await aggregateMetrics(integrationIds, currentPeriodStart, now)
+  
+  // Get previous period data
+  const previousData = await aggregateMetrics(integrationIds, previousPeriodStart, previousPeriodEnd)
+
+  // Calculate changes and trends
+  function calculateChange(current: number, previous: number) {
+    if (previous === 0) return current > 0 ? 100 : 0
+    return ((current - previous) / previous) * 100
+  }
+
+  function getTrend(change: number): 'up' | 'down' | 'neutral' {
+    if (change > 1) return 'up'
+    if (change < -1) return 'down'
+    return 'neutral'
+  }
+
+  const revenueChange = calculateChange(currentData.revenue, previousData.revenue)
+  const ordersChange = calculateChange(currentData.orders, previousData.orders)
+  const sessionsChange = calculateChange(currentData.sessions, previousData.sessions)
+  const customersChange = calculateChange(currentData.customers, previousData.customers)
+  
+  // Calculate conversion rate (orders/sessions * 100)
+  const currentConversion = currentData.sessions > 0 ? (currentData.orders / currentData.sessions) * 100 : 0
+  const previousConversion = previousData.sessions > 0 ? (previousData.orders / previousData.sessions) * 100 : 0
+  const conversionChange = calculateChange(currentConversion, previousConversion)
+  
+  // Calculate AOV (average order value)
+  const currentAOV = currentData.orders > 0 ? currentData.revenue / currentData.orders : 0
+  const previousAOV = previousData.orders > 0 ? previousData.revenue / previousData.orders : 0
+  const aovChange = calculateChange(currentAOV, previousAOV)
+
+  return {
+    revenue: {
+      current: Math.round(currentData.revenue),
+      previous: Math.round(previousData.revenue),
+      change: Math.round(revenueChange * 10) / 10,
+      trend: getTrend(revenueChange)
+    },
+    orders: {
+      current: Math.round(currentData.orders),
+      previous: Math.round(previousData.orders),
+      change: Math.round(ordersChange * 10) / 10,
+      trend: getTrend(ordersChange)
+    },
+    sessions: {
+      current: Math.round(currentData.sessions),
+      previous: Math.round(previousData.sessions),
+      change: Math.round(sessionsChange * 10) / 10,
+      trend: getTrend(sessionsChange)
+    },
+    customers: {
+      current: Math.round(currentData.customers),
+      previous: Math.round(previousData.customers),
+      change: Math.round(customersChange * 10) / 10,
+      trend: getTrend(customersChange)
+    },
+    conversion: {
+      current: Math.round(currentConversion * 10) / 10,
+      previous: Math.round(previousConversion * 10) / 10,
+      change: Math.round(conversionChange * 10) / 10,
+      trend: getTrend(conversionChange)
+    },
+    aov: {
+      current: Math.round(currentAOV * 100) / 100,
+      previous: Math.round(previousAOV * 100) / 100,
+      change: Math.round(aovChange * 10) / 10,
+      trend: getTrend(aovChange)
+    }
+  }
+}
+
+/**
+ * Aggregate metrics for a specific time period
+ */
+async function aggregateMetrics(integrationIds: string[], startDate: Date, endDate: Date) {
+  const [revenueData, ordersData, sessionsData, customersData] = await Promise.all([
+    // Revenue aggregation
+    prisma.dataPoint.aggregate({
+      where: {
+        integrationId: { in: integrationIds },
+        metricType: 'revenue',
+        dateRecorded: { gte: startDate, lte: endDate }
+      },
+      _sum: { value: true }
+    }),
+    
+    // Orders aggregation
+    prisma.dataPoint.aggregate({
+      where: {
+        integrationId: { in: integrationIds },
+        metricType: 'orders',
+        dateRecorded: { gte: startDate, lte: endDate }
+      },
+      _sum: { value: true }
+    }),
+    
+    // Sessions aggregation
+    prisma.dataPoint.aggregate({
+      where: {
+        integrationId: { in: integrationIds },
+        metricType: 'sessions',
+        dateRecorded: { gte: startDate, lte: endDate }
+      },
+      _sum: { value: true }
+    }),
+    
+    // Customers aggregation (could be distinct count, but for now sum)
+    prisma.dataPoint.aggregate({
+      where: {
+        integrationId: { in: integrationIds },
+        metricType: 'customers',
+        dateRecorded: { gte: startDate, lte: endDate }
+      },
+      _sum: { value: true }
+    })
+  ])
+
+  return {
+    revenue: Number(revenueData._sum.value || 0),
+    orders: Number(ordersData._sum.value || 0),
+    sessions: Number(sessionsData._sum.value || 0),
+    customers: Number(customersData._sum.value || 0)
+  }
+}
+
+/**
+ * Get real chart data from integrations
+ */
+async function getRealChartData(organizationId: string, integrations: any[]) {
+  if (integrations.length === 0) {
+    return {
+      revenue_trend: [],
+      traffic_sources: []
+    }
+  }
+
+  const integrationIds = integrations.map(i => i.id)
+  const last30Days = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+
+  // Get daily revenue trend for last 30 days
+  const revenueData = await prisma.dataPoint.findMany({
+    where: {
+      integrationId: { in: integrationIds },
+      metricType: 'revenue',
+      dateRecorded: { gte: last30Days }
+    },
+    orderBy: { dateRecorded: 'asc' }
+  })
+
+  // Group revenue by date
+  const revenueByDate = new Map<string, number>()
+  revenueData.forEach(point => {
+    const date = point.dateRecorded.toISOString().split('T')[0]
+    const current = revenueByDate.get(date) || 0
+    revenueByDate.set(date, current + Number(point.value))
+  })
+
+  // Create revenue trend array
+  const revenue_trend = Array.from(revenueByDate.entries()).map(([date, total_revenue]) => ({
+    date,
+    total_revenue: Math.round(total_revenue)
+  }))
+
+  // Get session data by source if available
+  // Traffic sources will be empty until Google Analytics integration is added
+  const traffic_sources: { source: string; sessions: number }[] = []
+
+  return {
+    revenue_trend,
+    traffic_sources
   }
 }
