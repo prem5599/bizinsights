@@ -3,7 +3,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { IntegrationManager } from '@/lib/integrations/manager'
 
+/**
+ * GET /api/integrations - Get all integrations for an organization
+ */
 export async function GET(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
@@ -11,65 +15,68 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user's organization (auto-detect)
-    const userMembership = await prisma.organizationMember.findFirst({
+    const { searchParams } = new URL(req.url)
+    const organizationId = searchParams.get('orgId')
+
+    if (!organizationId) {
+      return NextResponse.json({ error: 'Organization ID required' }, { status: 400 })
+    }
+
+    // Verify user has access to this organization
+    const member = await prisma.organizationMember.findFirst({
       where: {
+        organizationId,
         userId: session.user.id
-      },
-      include: {
-        organization: true
       }
     })
 
-    if (!userMembership) {
-      // Return empty data if no organization
-      return NextResponse.json({
-        integrations: [],
-        totalCount: 0,
-        connectedCount: 0
-      })
+    if (!member) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
-    const orgId = userMembership.organizationId
-
-    // Fetch integrations for the organization
+    // Get all integrations for the organization
     const integrations = await prisma.integration.findMany({
-      where: {
-        organizationId: orgId
-      },
+      where: { organizationId },
+      orderBy: { createdAt: 'desc' },
       select: {
         id: true,
         platform: true,
-        platformAccountId: true,
         status: true,
         lastSyncAt: true,
         createdAt: true,
         updatedAt: true,
-        // Don't expose sensitive tokens
-      },
-      orderBy: {
-        createdAt: 'desc'
+        platformAccountId: true,
+        metadata: true,
+        _count: {
+          select: {
+            dataPoints: true,
+            webhookEvents: true
+          }
+        }
       }
     })
 
-    // Add additional metadata for each integration
-    const integrationsWithStatus = integrations.map(integration => ({
-      ...integration,
-      isConnected: integration.status === 'active',
-      platformDisplayName: getPlatformDisplayName(integration.platform),
-      statusText: getStatusText(integration.status, integration.lastSyncAt),
-      canSync: integration.status === 'active',
-      syncStatus: getSyncStatus(integration.lastSyncAt)
-    }))
+    // Add connection status for each integration
+    const integrationsWithStatus = await Promise.all(
+      integrations.map(async (integration) => {
+        const isConnected = await IntegrationManager.testIntegration(integration.id)
+        
+        return {
+          ...integration,
+          isConnected,
+          dataPointsCount: integration._count.dataPoints,
+          webhookEventsCount: integration._count.webhookEvents
+        }
+      })
+    )
 
     return NextResponse.json({
       integrations: integrationsWithStatus,
-      totalCount: integrations.length,
-      connectedCount: integrations.filter(i => i.status === 'active').length
+      total: integrations.length
     })
 
   } catch (error) {
-    console.error('GET integrations error:', error)
+    console.error('Get integrations error:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
@@ -77,6 +84,9 @@ export async function GET(req: NextRequest) {
   }
 }
 
+/**
+ * POST /api/integrations - Create a new integration
+ */
 export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
@@ -85,12 +95,11 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json()
-    const { orgId, platform, accessToken, refreshToken, platformAccountId, metadata } = body
+    const { organizationId, platform, platformAccountId, accessToken, refreshToken } = body
 
-    // Validation
-    if (!orgId || !platform || !accessToken) {
+    if (!organizationId || !platform) {
       return NextResponse.json(
-        { error: 'Missing required fields: orgId, platform, accessToken' },
+        { error: 'Organization ID and platform are required' },
         { status: 400 }
       )
     }
@@ -98,7 +107,7 @@ export async function POST(req: NextRequest) {
     // Verify user has admin access to this organization
     const member = await prisma.organizationMember.findFirst({
       where: {
-        organizationId: orgId,
+        organizationId,
         userId: session.user.id,
         role: { in: ['owner', 'admin'] }
       }
@@ -108,83 +117,71 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
-    // Validate platform type
-    const supportedPlatforms = ['shopify', 'stripe', 'google_analytics', 'facebook_ads', 'mailchimp']
-    if (!supportedPlatforms.includes(platform)) {
-      return NextResponse.json(
-        { error: `Unsupported platform. Supported platforms: ${supportedPlatforms.join(', ')}` },
-        { status: 400 }
-      )
-    }
-
     // Check if integration already exists for this platform
-    const existingIntegration = await prisma.integration.findUnique({
+    const existingIntegration = await prisma.integration.findFirst({
       where: {
-        organizationId_platform: {
-          organizationId: orgId,
-          platform: platform
-        }
+        organizationId,
+        platform
       }
     })
 
     if (existingIntegration) {
       return NextResponse.json(
-        { error: `Integration for ${platform} already exists` },
+        { error: `${platform} integration already exists` },
         { status: 409 }
       )
     }
 
-    // Validate access token by making a test API call
-    const validationResult = await validateIntegrationToken(platform, accessToken, platformAccountId)
-    if (!validationResult.isValid) {
+    // Create the integration
+    const integration = await prisma.integration.create({
+      data: {
+        organizationId,
+        platform,
+        platformAccountId,
+        accessToken,
+        refreshToken,
+        status: 'active',
+        metadata: {
+          createdBy: session.user.id,
+          createdAt: new Date().toISOString()
+        }
+      }
+    })
+
+    // Test the connection
+    const connectionTest = await IntegrationManager.testIntegration(integration.id)
+    if (!connectionTest) {
+      await prisma.integration.update({
+        where: { id: integration.id },
+        data: { status: 'error' }
+      })
       return NextResponse.json(
-        { error: validationResult.error || 'Invalid access token' },
+        { error: 'Failed to connect to platform' },
         { status: 400 }
       )
     }
 
-    // Create new integration
-    const integration = await prisma.integration.create({
-      data: {
-        organizationId: orgId,
-        platform,
-        platformAccountId: platformAccountId || validationResult.accountId,
-        accessToken,
-        refreshToken,
-        tokenExpiresAt: validationResult.expiresAt,
-        status: 'active',
-        lastSyncAt: null
-      },
-      select: {
-        id: true,
-        platform: true,
-        platformAccountId: true,
-        status: true,
-        lastSyncAt: true,
-        createdAt: true,
-        updatedAt: true
+    // Start initial data sync in background
+    setImmediate(async () => {
+      try {
+        await IntegrationManager.syncIntegration(integration.id)
+      } catch (error) {
+        console.error('Background sync failed:', error)
       }
     })
 
-    // Trigger initial data sync in background
-    triggerInitialSync(integration.id, platform).catch(error => {
-      console.error('Failed to trigger initial sync:', error)
+    return NextResponse.json({
+      success: true,
+      integration: {
+        id: integration.id,
+        platform: integration.platform,
+        status: integration.status,
+        createdAt: integration.createdAt
+      }
     })
 
-    return NextResponse.json({
-      integration: {
-        ...integration,
-        isConnected: true,
-        platformDisplayName: getPlatformDisplayName(platform),
-        statusText: 'Connected',
-        canSync: true,
-        syncStatus: 'pending'
-      },
-      message: 'Integration created successfully'
-    }, { status: 201 })
-
   } catch (error) {
-    console.error('POST integrations error:', error)
+    console.error('Create integration error:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
@@ -192,189 +189,148 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Helper functions
-
-function getPlatformDisplayName(platform: string): string {
-  const displayNames: Record<string, string> = {
-    shopify: 'Shopify',
-    stripe: 'Stripe',
-    google_analytics: 'Google Analytics',
-    facebook_ads: 'Facebook Ads',
-    mailchimp: 'Mailchimp'
-  }
-  return displayNames[platform] || platform
-}
-
-function getStatusText(status: string, lastSyncAt: Date | null): string {
-  if (status !== 'active') return 'Disconnected'
-  
-  if (!lastSyncAt) return 'Connected - No sync yet'
-  
-  const hoursSinceSync = (Date.now() - lastSyncAt.getTime()) / (1000 * 60 * 60)
-  if (hoursSinceSync < 1) return 'Connected - Synced recently'
-  if (hoursSinceSync < 24) return `Connected - Synced ${Math.floor(hoursSinceSync)}h ago`
-  
-  const daysSinceSync = Math.floor(hoursSinceSync / 24)
-  return `Connected - Synced ${daysSinceSync}d ago`
-}
-
-function getSyncStatus(lastSyncAt: Date | null): 'pending' | 'syncing' | 'synced' | 'error' {
-  if (!lastSyncAt) return 'pending'
-  
-  const hoursSinceSync = (Date.now() - lastSyncAt.getTime()) / (1000 * 60 * 60)
-  if (hoursSinceSync > 25) return 'error' // Should sync at least daily
-  
-  return 'synced'
-}
-
-async function validateIntegrationToken(
-  platform: string, 
-  accessToken: string, 
-  platformAccountId?: string
-): Promise<{ isValid: boolean; error?: string; accountId?: string; expiresAt?: Date }> {
+/**
+ * DELETE /api/integrations - Delete an integration
+ */
+export async function DELETE(req: NextRequest) {
   try {
-    switch (platform) {
-      case 'shopify':
-        return await validateShopifyToken(accessToken, platformAccountId)
-      case 'stripe':
-        return await validateStripeToken(accessToken)
-      case 'google_analytics':
-        return await validateGoogleAnalyticsToken(accessToken)
-      case 'facebook_ads':
-        return await validateFacebookAdsToken(accessToken)
-      case 'mailchimp':
-        return await validateMailchimpToken(accessToken)
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { searchParams } = new URL(req.url)
+    const integrationId = searchParams.get('id')
+
+    if (!integrationId) {
+      return NextResponse.json({ error: 'Integration ID required' }, { status: 400 })
+    }
+
+    // Get the integration
+    const integration = await prisma.integration.findUnique({
+      where: { id: integrationId },
+      include: {
+        organization: {
+          include: {
+            members: {
+              where: { userId: session.user.id }
+            }
+          }
+        }
+      }
+    })
+
+    if (!integration) {
+      return NextResponse.json({ error: 'Integration not found' }, { status: 404 })
+    }
+
+    // Check if user has admin access
+    const member = integration.organization.members[0]
+    if (!member || !['owner', 'admin'].includes(member.role)) {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
+    }
+
+    // Disconnect the integration using the manager
+    const success = await IntegrationManager.disconnectIntegration(
+      integrationId,
+      'user_deleted'
+    )
+
+    if (!success) {
+      return NextResponse.json(
+        { error: 'Failed to disconnect integration' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Integration disconnected successfully'
+    })
+
+  } catch (error) {
+    console.error('Delete integration error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * PATCH /api/integrations - Update an integration
+ */
+export async function PATCH(req: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const body = await req.json()
+    const { integrationId, action, ...updateData } = body
+
+    if (!integrationId) {
+      return NextResponse.json({ error: 'Integration ID required' }, { status: 400 })
+    }
+
+    // Get the integration
+    const integration = await prisma.integration.findUnique({
+      where: { id: integrationId },
+      include: {
+        organization: {
+          include: {
+            members: {
+              where: { userId: session.user.id }
+            }
+          }
+        }
+      }
+    })
+
+    if (!integration) {
+      return NextResponse.json({ error: 'Integration not found' }, { status: 404 })
+    }
+
+    // Check if user has admin access
+    const member = integration.organization.members[0]
+    if (!member || !['owner', 'admin'].includes(member.role)) {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
+    }
+
+    let result
+    switch (action) {
+      case 'sync':
+        result = await IntegrationManager.syncIntegration(integrationId)
+        break
+      
+      case 'test':
+        const isConnected = await IntegrationManager.testIntegration(integrationId)
+        result = { success: isConnected, connected: isConnected }
+        break
+      
+      case 'update':
+        const updatedIntegration = await prisma.integration.update({
+          where: { id: integrationId },
+          data: {
+            ...updateData,
+            updatedAt: new Date()
+          }
+        })
+        result = { success: true, integration: updatedIntegration }
+        break
+      
       default:
-        return { isValid: false, error: 'Unsupported platform' }
+        return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
     }
-  } catch (error) {
-    console.error(`Token validation error for ${platform}:`, error)
-    return { isValid: false, error: 'Token validation failed' }
-  }
-}
 
-async function validateShopifyToken(accessToken: string, shopDomain?: string): Promise<any> {
-  if (!shopDomain) {
-    return { isValid: false, error: 'Shop domain is required for Shopify integration' }
-  }
-  
-  try {
-    const response = await fetch(`https://${shopDomain}/admin/api/2023-10/shop.json`, {
-      headers: {
-        'X-Shopify-Access-Token': accessToken,
-        'Content-Type': 'application/json'
-      }
-    })
-    
-    if (!response.ok) {
-      return { isValid: false, error: 'Invalid Shopify access token or shop domain' }
-    }
-    
-    const data = await response.json()
-    return { 
-      isValid: true, 
-      accountId: data.shop?.id?.toString() || shopDomain 
-    }
-  } catch (error) {
-    return { isValid: false, error: 'Failed to validate Shopify token' }
-  }
-}
+    return NextResponse.json(result)
 
-async function validateStripeToken(accessToken: string): Promise<any> {
-  try {
-    const response = await fetch('https://api.stripe.com/v1/account', {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/x-www-form-urlencoded'
-      }
-    })
-    
-    if (!response.ok) {
-      return { isValid: false, error: 'Invalid Stripe access token' }
-    }
-    
-    const data = await response.json()
-    return { 
-      isValid: true, 
-      accountId: data.id 
-    }
   } catch (error) {
-    return { isValid: false, error: 'Failed to validate Stripe token' }
+    console.error('Update integration error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
   }
-}
-
-async function validateGoogleAnalyticsToken(accessToken: string): Promise<any> {
-  try {
-    const response = await fetch('https://www.googleapis.com/oauth2/v1/tokeninfo', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: `access_token=${accessToken}`
-    })
-    
-    if (!response.ok) {
-      return { isValid: false, error: 'Invalid Google Analytics access token' }
-    }
-    
-    const data = await response.json()
-    const expiresAt = data.expires_in ? new Date(Date.now() + data.expires_in * 1000) : undefined
-    
-    return { 
-      isValid: true, 
-      accountId: data.user_id || data.email,
-      expiresAt 
-    }
-  } catch (error) {
-    return { isValid: false, error: 'Failed to validate Google Analytics token' }
-  }
-}
-
-async function validateFacebookAdsToken(accessToken: string): Promise<any> {
-  try {
-    const response = await fetch(`https://graph.facebook.com/me?access_token=${accessToken}`)
-    
-    if (!response.ok) {
-      return { isValid: false, error: 'Invalid Facebook Ads access token' }
-    }
-    
-    const data = await response.json()
-    return { 
-      isValid: true, 
-      accountId: data.id 
-    }
-  } catch (error) {
-    return { isValid: false, error: 'Failed to validate Facebook Ads token' }
-  }
-}
-
-async function validateMailchimpToken(accessToken: string): Promise<any> {
-  try {
-    const response = await fetch('https://login.mailchimp.com/oauth2/metadata', {
-      headers: {
-        'Authorization': `OAuth ${accessToken}`
-      }
-    })
-    
-    if (!response.ok) {
-      return { isValid: false, error: 'Invalid Mailchimp access token' }
-    }
-    
-    const data = await response.json()
-    return { 
-      isValid: true, 
-      accountId: data.dc 
-    }
-  } catch (error) {
-    return { isValid: false, error: 'Failed to validate Mailchimp token' }
-  }
-}
-
-async function triggerInitialSync(integrationId: string, platform: string): Promise<void> {
-  // In a real implementation, this would trigger a background job
-  // For now, we'll just log that sync should be triggered
-  console.log(`Initial sync triggered for integration ${integrationId} (${platform})`)
-  
-  // You could use a queue system like Bull or trigger a serverless function
-  // Example: await syncQueue.add('initial-sync', { integrationId, platform })
 }
