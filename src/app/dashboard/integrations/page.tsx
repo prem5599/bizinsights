@@ -489,4 +489,4 @@ export default function IntegrationsPage() {
       />
     </DashboardLayout>
   )
-}
+} 
