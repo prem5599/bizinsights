@@ -1,12 +1,17 @@
 // src/lib/integrations/google-analytics.ts
 import { prisma } from '@/lib/prisma'
-import { Decimal } from '@prisma/client/runtime/library'
 
-interface GoogleAnalyticsConfig {
-  accessToken: string
-  refreshToken?: string
-  propertyId: string
-  apiVersion?: string
+/**
+ * Google Analytics API Types
+ */
+interface GAProperty {
+  name: string
+  displayName: string
+  propertyType: string
+  createTime: string
+  updateTime: string
+  timeZone: string
+  currencyCode: string
 }
 
 interface GAMetric {
@@ -19,667 +24,742 @@ interface GADimension {
   values: string[]
 }
 
+interface GAReportRow {
+  dimensionValues: GADimension[]
+  metricValues: GAMetric[]
+}
+
 interface GAReportResponse {
-  data: Array<{
-    rows?: Array<{
-      dimensionValues: GADimension[]
-      metricValues: GAMetric[]
-    }>
-    totals?: Array<{
-      metricValues: GAMetric[]
-    }>
-    maximums?: Array<{
-      metricValues: GAMetric[]
-    }>
-    minimums?: Array<{
-      metricValues: GAMetric[]
-    }>
+  rows?: GAReportRow[]
+  metadata?: any
+  rowCount?: number
+}
+
+interface GABatchGetReportsRequest {
+  reportRequests: GAReportRequest[]
+}
+
+interface GAReportRequest {
+  viewId?: string
+  property?: string
+  dateRanges: Array<{
+    startDate: string
+    endDate: string
   }>
+  metrics: Array<{
+    expression: string
+    alias?: string
+  }>
+  dimensions?: Array<{
+    name: string
+  }>
+  dimensionFilterClauses?: any[]
+  metricFilterClauses?: any[]
+  orderBys?: any[]
+  pageSize?: number
+  pageToken?: string
 }
 
-interface GAPropertyInfo {
-  name: string
-  propertyId: string
-  displayName: string
-  industryCategory: string
-  timeZone: string
-  currencyCode: string
-}
+/**
+ * Google Analytics Integration Class
+ */
+export class GoogleAnalyticsIntegration {
+  private accessToken: string
+  private refreshToken: string
+  private propertyId: string
+  private clientId: string
+  private clientSecret: string
 
-export class GoogleAnalyticsConnector {
-  private config: GoogleAnalyticsConfig
-  private baseUrl: string
-
-  constructor(config: GoogleAnalyticsConfig) {
-    this.config = {
-      ...config,
-      apiVersion: config.apiVersion || 'v1beta'
-    }
-    this.baseUrl = `https://analyticsdata.googleapis.com/${this.config.apiVersion}`
+  constructor(accessToken: string, refreshToken: string, propertyId: string) {
+    this.accessToken = accessToken
+    this.refreshToken = refreshToken
+    this.propertyId = propertyId
+    this.clientId = process.env.GOOGLE_CLIENT_ID!
+    this.clientSecret = process.env.GOOGLE_CLIENT_SECRET!
   }
 
-  // Main sync function
-  async syncData(integrationId: string, lastSyncAt?: Date): Promise<{ success: boolean; error?: string; stats?: any }> {
-    try {
-      console.log(`Starting Google Analytics sync for integration ${integrationId}`)
-      
-      // Validate connection first
-      const propertyInfo = await this.getPropertyInfo()
-      if (!propertyInfo) {
-        throw new Error('Failed to connect to Google Analytics property')
-      }
-
-      const stats = {
-        sessions: 0,
-        users: 0,
-        pageviews: 0,
-        bounceRate: 0,
-        avgSessionDuration: 0,
-        conversions: 0
-      }
-
-      // Determine date range for sync
-      const endDate = new Date()
-      const startDate = lastSyncAt || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) // Default: last 30 days
-
-      // Sync core metrics
-      const coreMetrics = await this.syncCoreMetrics(integrationId, startDate, endDate)
-      stats.sessions = coreMetrics.sessions
-      stats.users = coreMetrics.users
-      stats.pageviews = coreMetrics.pageviews
-
-      // Sync engagement metrics
-      const engagementMetrics = await this.syncEngagementMetrics(integrationId, startDate, endDate)
-      stats.bounceRate = engagementMetrics.bounceRate
-      stats.avgSessionDuration = engagementMetrics.avgSessionDuration
-
-      // Sync conversion metrics
-      const conversionMetrics = await this.syncConversionMetrics(integrationId, startDate, endDate)
-      stats.conversions = conversionMetrics.conversions
-
-      // Sync traffic sources
-      await this.syncTrafficSources(integrationId, startDate, endDate)
-
-      // Sync page performance
-      await this.syncPagePerformance(integrationId, startDate, endDate)
-
-      // Update integration sync timestamp
-      await prisma.integration.update({
-        where: { id: integrationId },
-        data: { 
-          lastSyncAt: new Date(),
-          status: 'active'
-        }
-      })
-
-      console.log(`Google Analytics sync completed for integration ${integrationId}:`, stats)
-      return { success: true, stats }
-
-    } catch (error) {
-      console.error(`Google Analytics sync failed for integration ${integrationId}:`, error)
-      
-      // Update integration status to error
-      await prisma.integration.update({
-        where: { id: integrationId },
-        data: { status: 'error' }
-      })
-
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Unknown error occurred' 
-      }
-    }
-  }
-
-  // Sync core metrics (sessions, users, pageviews)
-  private async syncCoreMetrics(integrationId: string, startDate: Date, endDate: Date): Promise<any> {
-    try {
-      const report = await this.runReport({
-        dateRanges: [{
-          startDate: this.formatDate(startDate),
-          endDate: this.formatDate(endDate)
-        }],
-        dimensions: [{ name: 'date' }],
-        metrics: [
-          { name: 'sessions' },
-          { name: 'activeUsers' },
-          { name: 'screenPageViews' },
-          { name: 'newUsers' }
-        ],
-        orderBys: [{ dimension: { dimensionName: 'date' } }]
-      })
-
-      let totalSessions = 0
-      let totalUsers = 0
-      let totalPageviews = 0
-      const dataPoints = []
-
-      if (report.data[0]?.rows) {
-        for (const row of report.data[0].rows) {
-          const date = row.dimensionValues[0].values[0]
-          const sessions = parseInt(row.metricValues[0].values[0]) || 0
-          const users = parseInt(row.metricValues[1].values[0]) || 0
-          const pageviews = parseInt(row.metricValues[2].values[0]) || 0
-          const newUsers = parseInt(row.metricValues[3].values[0]) || 0
-
-          totalSessions += sessions
-          totalUsers += users
-          totalPageviews += pageviews
-
-          const recordDate = new Date(date)
-
-          // Create data points for each metric
-          dataPoints.push(
-            {
-              integrationId,
-              metricType: 'ga_sessions',
-              value: new Decimal(sessions),
-              metadata: {
-                date: date,
-                source: 'google_analytics',
-                users: users,
-                pageviews: pageviews
-              },
-              dateRecorded: recordDate
-            },
-            {
-              integrationId,
-              metricType: 'ga_users',
-              value: new Decimal(users),
-              metadata: {
-                date: date,
-                source: 'google_analytics',
-                newUsers: newUsers,
-                returningUsers: users - newUsers
-              },
-              dateRecorded: recordDate
-            },
-            {
-              integrationId,
-              metricType: 'ga_pageviews',
-              value: new Decimal(pageviews),
-              metadata: {
-                date: date,
-                source: 'google_analytics',
-                sessions: sessions
-              },
-              dateRecorded: recordDate
-            }
-          )
-        }
-      }
-
-      // Batch create data points
-      if (dataPoints.length > 0) {
-        await this.batchCreateDataPoints(dataPoints)
-      }
-
-      return {
-        sessions: totalSessions,
-        users: totalUsers,
-        pageviews: totalPageviews
-      }
-
-    } catch (error) {
-      console.error('Error syncing GA core metrics:', error)
-      throw error
-    }
-  }
-
-  // Sync engagement metrics (bounce rate, session duration)
-  private async syncEngagementMetrics(integrationId: string, startDate: Date, endDate: Date): Promise<any> {
-    try {
-      const report = await this.runReport({
-        dateRanges: [{
-          startDate: this.formatDate(startDate),
-          endDate: this.formatDate(endDate)
-        }],
-        dimensions: [{ name: 'date' }],
-        metrics: [
-          { name: 'bounceRate' },
-          { name: 'averageSessionDuration' },
-          { name: 'engagementRate' },
-          { name: 'engagedSessions' }
-        ],
-        orderBys: [{ dimension: { dimensionName: 'date' } }]
-      })
-
-      let totalBounceRate = 0
-      let totalAvgDuration = 0
-      const dataPoints = []
-
-      if (report.data[0]?.rows) {
-        for (const row of report.data[0].rows) {
-          const date = row.dimensionValues[0].values[0]
-          const bounceRate = parseFloat(row.metricValues[0].values[0]) || 0
-          const avgDuration = parseFloat(row.metricValues[1].values[0]) || 0
-          const engagementRate = parseFloat(row.metricValues[2].values[0]) || 0
-          const engagedSessions = parseInt(row.metricValues[3].values[0]) || 0
-
-          totalBounceRate += bounceRate
-          totalAvgDuration += avgDuration
-
-          const recordDate = new Date(date)
-
-          dataPoints.push(
-            {
-              integrationId,
-              metricType: 'ga_bounce_rate',
-              value: new Decimal(bounceRate),
-              metadata: {
-                date: date,
-                source: 'google_analytics',
-                engagementRate: engagementRate
-              },
-              dateRecorded: recordDate
-            },
-            {
-              integrationId,
-              metricType: 'ga_avg_session_duration',
-              value: new Decimal(avgDuration),
-              metadata: {
-                date: date,
-                source: 'google_analytics',
-                engagedSessions: engagedSessions
-              },
-              dateRecorded: recordDate
-            }
-          )
-        }
-      }
-
-      if (dataPoints.length > 0) {
-        await this.batchCreateDataPoints(dataPoints)
-      }
-
-      const rowCount = report.data[0]?.rows?.length || 1
-      return {
-        bounceRate: totalBounceRate / rowCount,
-        avgSessionDuration: totalAvgDuration / rowCount
-      }
-
-    } catch (error) {
-      console.error('Error syncing GA engagement metrics:', error)
-      throw error
-    }
-  }
-
-  // Sync conversion metrics
-  private async syncConversionMetrics(integrationId: string, startDate: Date, endDate: Date): Promise<any> {
-    try {
-      const report = await this.runReport({
-        dateRanges: [{
-          startDate: this.formatDate(startDate),
-          endDate: this.formatDate(endDate)
-        }],
-        dimensions: [{ name: 'date' }],
-        metrics: [
-          { name: 'conversions' },
-          { name: 'totalRevenue' },
-          { name: 'purchaseRevenue' },
-          { name: 'ecommercePurchases' }
-        ],
-        orderBys: [{ dimension: { dimensionName: 'date' } }]
-      })
-
-      let totalConversions = 0
-      let totalRevenue = 0
-      const dataPoints = []
-
-      if (report.data[0]?.rows) {
-        for (const row of report.data[0].rows) {
-          const date = row.dimensionValues[0].values[0]
-          const conversions = parseInt(row.metricValues[0].values[0]) || 0
-          const revenue = parseFloat(row.metricValues[1].values[0]) || 0
-          const purchaseRevenue = parseFloat(row.metricValues[2].values[0]) || 0
-          const purchases = parseInt(row.metricValues[3].values[0]) || 0
-
-          totalConversions += conversions
-          totalRevenue += revenue
-
-          const recordDate = new Date(date)
-
-          if (conversions > 0) {
-            dataPoints.push({
-              integrationId,
-              metricType: 'ga_conversions',
-              value: new Decimal(conversions),
-              metadata: {
-                date: date,
-                source: 'google_analytics',
-                revenue: revenue,
-                purchaseRevenue: purchaseRevenue,
-                purchases: purchases
-              },
-              dateRecorded: recordDate
-            })
-          }
-
-          if (revenue > 0) {
-            dataPoints.push({
-              integrationId,
-              metricType: 'ga_revenue',
-              value: new Decimal(revenue),
-              metadata: {
-                date: date,
-                source: 'google_analytics',
-                conversions: conversions,
-                purchases: purchases
-              },
-              dateRecorded: recordDate
-            })
-          }
-        }
-      }
-
-      if (dataPoints.length > 0) {
-        await this.batchCreateDataPoints(dataPoints)
-      }
-
-      return {
-        conversions: totalConversions,
-        revenue: totalRevenue
-      }
-
-    } catch (error) {
-      console.error('Error syncing GA conversion metrics:', error)
-      // Don't throw error for conversions - not all sites have e-commerce
-      return { conversions: 0, revenue: 0 }
-    }
-  }
-
-  // Sync traffic sources
-  private async syncTrafficSources(integrationId: string, startDate: Date, endDate: Date): Promise<void> {
-    try {
-      const report = await this.runReport({
-        dateRanges: [{
-          startDate: this.formatDate(startDate),
-          endDate: this.formatDate(endDate)
-        }],
-        dimensions: [
-          { name: 'sessionDefaultChannelGrouping' },
-          { name: 'sessionSource' },
-          { name: 'sessionMedium' }
-        ],
-        metrics: [
-          { name: 'sessions' },
-          { name: 'activeUsers' },
-          { name: 'newUsers' }
-        ],
-        orderBys: [{ 
-          metric: { 
-            metricName: 'sessions' 
-          }, 
-          desc: true 
-        }]
-      })
-
-      const dataPoints = []
-
-      if (report.data[0]?.rows) {
-        for (const row of report.data[0].rows) {
-          const channelGroup = row.dimensionValues[0].values[0]
-          const source = row.dimensionValues[1].values[0]
-          const medium = row.dimensionValues[2].values[0]
-          const sessions = parseInt(row.metricValues[0].values[0]) || 0
-          const users = parseInt(row.metricValues[1].values[0]) || 0
-          const newUsers = parseInt(row.metricValues[2].values[0]) || 0
-
-          dataPoints.push({
-            integrationId,
-            metricType: 'ga_traffic_source',
-            value: new Decimal(sessions),
-            metadata: {
-              channelGroup: channelGroup,
-              source: source,
-              medium: medium,
-              users: users,
-              newUsers: newUsers,
-              source_type: 'google_analytics'
-            },
-            dateRecorded: new Date()
-          })
-        }
-      }
-
-      if (dataPoints.length > 0) {
-        await this.batchCreateDataPoints(dataPoints)
-      }
-
-    } catch (error) {
-      console.error('Error syncing GA traffic sources:', error)
-      throw error
-    }
-  }
-
-  // Sync page performance
-  private async syncPagePerformance(integrationId: string, startDate: Date, endDate: Date): Promise<void> {
-    try {
-      const report = await this.runReport({
-        dateRanges: [{
-          startDate: this.formatDate(startDate),
-          endDate: this.formatDate(endDate)
-        }],
-        dimensions: [{ name: 'pagePath' }],
-        metrics: [
-          { name: 'screenPageViews' },
-          { name: 'averageSessionDuration' },
-          { name: 'bounceRate' }
-        ],
-        orderBys: [{ 
-          metric: { 
-            metricName: 'screenPageViews' 
-          }, 
-          desc: true 
-        }],
-        limit: 50 // Top 50 pages
-      })
-
-      const dataPoints = []
-
-      if (report.data[0]?.rows) {
-        for (const row of report.data[0].rows) {
-          const pagePath = row.dimensionValues[0].values[0]
-          const pageviews = parseInt(row.metricValues[0].values[0]) || 0
-          const avgDuration = parseFloat(row.metricValues[1].values[0]) || 0
-          const bounceRate = parseFloat(row.metricValues[2].values[0]) || 0
-
-          dataPoints.push({
-            integrationId,
-            metricType: 'ga_page_performance',
-            value: new Decimal(pageviews),
-            metadata: {
-              pagePath: pagePath,
-              pageviews: pageviews,
-              avgDuration: avgDuration,
-              bounceRate: bounceRate,
-              source: 'google_analytics'
-            },
-            dateRecorded: new Date()
-          })
-        }
-      }
-
-      if (dataPoints.length > 0) {
-        await this.batchCreateDataPoints(dataPoints)
-      }
-
-    } catch (error) {
-      console.error('Error syncing GA page performance:', error)
-      throw error
-    }
-  }
-
-  // API Methods
-  private async runReport(requestBody: any): Promise<GAReportResponse> {
-    const url = `${this.baseUrl}/properties/${this.config.propertyId}:runReport`
-    
-    const response = await this.makeRequest(url, {
-      method: 'POST',
-      body: JSON.stringify(requestBody)
-    })
-
-    return response
-  }
-
-  private async getPropertyInfo(): Promise<GAPropertyInfo | null> {
-    try {
-      const url = `https://analyticsadmin.googleapis.com/v1beta/properties/${this.config.propertyId}`
-      return await this.makeRequest(url)
-    } catch (error) {
-      console.error('Failed to get GA property info:', error)
-      return null
-    }
-  }
-
-  // Utility Methods
-  private async makeRequest(url: string, options: RequestInit = {}): Promise<any> {
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Authorization': `Bearer ${this.config.accessToken}`,
-        'Content-Type': 'application/json',
-        'User-Agent': 'BizInsights/1.0',
-        ...options.headers
-      }
-    })
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      
-      // Handle token expiry
-      if (response.status === 401 && this.config.refreshToken) {
-        const newToken = await this.refreshAccessToken()
-        if (newToken) {
-          this.config.accessToken = newToken
-          // Retry the request with new token
-          return this.makeRequest(url, options)
-        }
-      }
-      
-      throw new Error(`Google Analytics API error: ${response.status} ${response.statusText} - ${errorText}`)
-    }
-
-    return response.json()
-  }
-
-  private async refreshAccessToken(): Promise<string | null> {
+  /**
+   * Refresh access token if needed
+   */
+  private async refreshAccessToken(): Promise<void> {
     try {
       const response = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Type': 'application/x-www-form-urlencoded'
         },
         body: new URLSearchParams({
-          client_id: process.env.GOOGLE_ANALYTICS_CLIENT_ID!,
-          client_secret: process.env.GOOGLE_ANALYTICS_CLIENT_SECRET!,
-          refresh_token: this.config.refreshToken!,
+          client_id: this.clientId,
+          client_secret: this.clientSecret,
+          refresh_token: this.refreshToken,
           grant_type: 'refresh_token'
         })
       })
 
       if (!response.ok) {
-        throw new Error('Failed to refresh Google Analytics token')
+        throw new Error(`Failed to refresh token: ${response.status} ${response.statusText}`)
       }
 
       const data = await response.json()
-      return data.access_token
+      this.accessToken = data.access_token
+      
+      // Update token in database
+      await prisma.integration.updateMany({
+        where: {
+          platform: 'google_analytics',
+          refreshToken: this.refreshToken
+        },
+        data: {
+          accessToken: this.accessToken,
+          tokenExpiresAt: new Date(Date.now() + (data.expires_in * 1000))
+        }
+      })
+
+      console.log('Google Analytics access token refreshed')
     } catch (error) {
       console.error('Error refreshing Google Analytics token:', error)
-      return null
+      throw error
     }
   }
 
-  private formatDate(date: Date): string {
-    return date.toISOString().split('T')[0] // YYYY-MM-DD format
-  }
-
-  private async batchCreateDataPoints(dataPoints: any[]): Promise<void> {
-    const batchSize = 1000
-    
-    for (let i = 0; i < dataPoints.length; i += batchSize) {
-      const batch = dataPoints.slice(i, i + batchSize)
-      
+  /**
+   * Make authenticated API request with token refresh
+   */
+  private async makeRequest(
+    url: string, 
+    options: RequestInit = {},
+    retries: number = 3
+  ): Promise<any> {
+    for (let attempt = 1; attempt <= retries; attempt++) {
       try {
-        await prisma.dataPoint.createMany({
-          data: batch,
-          skipDuplicates: true
+        const response = await fetch(url, {
+          ...options,
+          headers: {
+            'Authorization': `Bearer ${this.accessToken}`,
+            'Content-Type': 'application/json',
+            ...options.headers
+          }
         })
+
+        // Token expired - refresh and retry
+        if (response.status === 401 && attempt < retries) {
+          await this.refreshAccessToken()
+          continue
+        }
+
+        // Rate limiting - wait and retry
+        if (response.status === 429 && attempt < retries) {
+          const retryAfter = parseInt(response.headers.get('Retry-After') || '60')
+          await new Promise(resolve => setTimeout(resolve, retryAfter * 1000))
+          continue
+        }
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => 'Unknown error')
+          throw new Error(`Google Analytics API error: ${response.status} ${response.statusText} - ${errorText}`)
+        }
+
+        return response.json()
       } catch (error) {
-        console.error(`Failed to create batch ${i / batchSize + 1}:`, error)
+        if (attempt === retries) throw error
+        
+        // Exponential backoff for network errors
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000))
       }
     }
   }
 
-  private async delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms))
-  }
-}
-
-// Helper function to create Google Analytics connector instance
-export function createGoogleAnalyticsConnector(config: GoogleAnalyticsConfig): GoogleAnalyticsConnector {
-  return new GoogleAnalyticsConnector(config)
-}
-
-// Webhook handler for Google Analytics (if needed for real-time reporting)
-export async function handleGoogleAnalyticsWebhook(
-  integrationId: string,
-  eventType: string,
-  payload: any
-): Promise<{ success: boolean; error?: string }> {
-  try {
-    console.log(`Handling Google Analytics webhook: ${eventType} for integration ${integrationId}`)
-
-    // Google Analytics doesn't have traditional webhooks like Shopify/Stripe
-    // But we can handle custom events here if needed
-    
-    switch (eventType) {
-      case 'realtime_report':
-        await handleRealtimeReport(integrationId, payload)
-        break
-      
-      case 'property_update':
-        await handlePropertyUpdate(integrationId, payload)
-        break
-      
-      default:
-        console.log(`Unhandled Google Analytics webhook event: ${eventType}`)
-    }
-
-    return { success: true }
-    
-  } catch (error) {
-    console.error(`Google Analytics webhook handling failed for ${eventType}:`, error)
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Unknown error' 
+  /**
+   * Test connection to Google Analytics
+   */
+  async testConnection(): Promise<boolean> {
+    try {
+      await this.getProperty()
+      return true
+    } catch (error) {
+      console.error('Google Analytics connection test failed:', error)
+      return false
     }
   }
-}
 
-async function handleRealtimeReport(integrationId: string, data: any): Promise<void> {
-  // Handle real-time analytics data
-  await prisma.dataPoint.create({
-    data: {
-      integrationId,
-      metricType: 'ga_realtime_users',
-      value: new Decimal(data.activeUsers || 0),
-      metadata: {
-        timestamp: new Date().toISOString(),
-        source: 'google_analytics_realtime',
-        ...data
+  /**
+   * Get property information
+   */
+  async getProperty(): Promise<GAProperty> {
+    const data = await this.makeRequest(
+      `https://analyticsadmin.googleapis.com/v1beta/properties/${this.propertyId}`
+    )
+    return data
+  }
+
+  /**
+   * Get analytics data using GA4 Data API
+   */
+  async runReport(request: GAReportRequest): Promise<GAReportResponse> {
+    const url = `https://analyticsdata.googleapis.com/v1beta/properties/${this.propertyId}:runReport`
+    
+    const response = await this.makeRequest(url, {
+      method: 'POST',
+      body: JSON.stringify(request)
+    })
+
+    return response
+  }
+
+  /**
+   * Get batch reports
+   */
+  async batchRunReports(requests: GAReportRequest[]): Promise<GAReportResponse[]> {
+    const url = `https://analyticsdata.googleapis.com/v1beta/properties/${this.propertyId}:batchRunReports`
+    
+    const response = await this.makeRequest(url, {
+      method: 'POST',
+      body: JSON.stringify({
+        requests
+      })
+    })
+
+    return response.reports || []
+  }
+
+  /**
+   * Get real-time data
+   */
+  async runRealtimeReport(request: Omit<GAReportRequest, 'dateRanges'>): Promise<GAReportResponse> {
+    const url = `https://analyticsdata.googleapis.com/v1beta/properties/${this.propertyId}:runRealtimeReport`
+    
+    const response = await this.makeRequest(url, {
+      method: 'POST',
+      body: JSON.stringify(request)
+    })
+
+    return response
+  }
+
+  /**
+   * Get core website metrics
+   */
+  async getWebsiteMetrics(startDate: string, endDate: string): Promise<{
+    sessions: number
+    users: number
+    pageviews: number
+    bounceRate: number
+    avgSessionDuration: number
+    newUsers: number
+  }> {
+    const request: GAReportRequest = {
+      dateRanges: [{
+        startDate,
+        endDate
+      }],
+      metrics: [
+        { expression: 'sessions' },
+        { expression: 'totalUsers' },
+        { expression: 'screenPageViews' },
+        { expression: 'bounceRate' },
+        { expression: 'averageSessionDuration' },
+        { expression: 'newUsers' }
+      ]
+    }
+
+    const response = await this.runReport(request)
+    
+    if (!response.rows || response.rows.length === 0) {
+      return {
+        sessions: 0,
+        users: 0,
+        pageviews: 0,
+        bounceRate: 0,
+        avgSessionDuration: 0,
+        newUsers: 0
+      }
+    }
+
+    const row = response.rows[0]
+    return {
+      sessions: parseInt(row.metricValues[0]?.values[0] || '0'),
+      users: parseInt(row.metricValues[1]?.values[0] || '0'),
+      pageviews: parseInt(row.metricValues[2]?.values[0] || '0'),
+      bounceRate: parseFloat(row.metricValues[3]?.values[0] || '0'),
+      avgSessionDuration: parseFloat(row.metricValues[4]?.values[0] || '0'),
+      newUsers: parseInt(row.metricValues[5]?.values[0] || '0')
+    }
+  }
+
+  /**
+   * Get traffic sources
+   */
+  async getTrafficSources(startDate: string, endDate: string): Promise<Array<{
+    source: string
+    medium: string
+    sessions: number
+    users: number
+    percentage: number
+  }>> {
+    const request: GAReportRequest = {
+      dateRanges: [{
+        startDate,
+        endDate
+      }],
+      dimensions: [
+        { name: 'sessionSource' },
+        { name: 'sessionMedium' }
+      ],
+      metrics: [
+        { expression: 'sessions' },
+        { expression: 'totalUsers' }
+      ],
+      orderBys: [{
+        metric: { metricName: 'sessions' },
+        desc: true
+      }],
+      pageSize: 10
+    }
+
+    const response = await this.runReport(request)
+    
+    if (!response.rows || response.rows.length === 0) {
+      return []
+    }
+
+    const totalSessions = response.rows.reduce((sum, row) => 
+      sum + parseInt(row.metricValues[0]?.values[0] || '0'), 0)
+
+    return response.rows.map(row => ({
+      source: row.dimensionValues[0]?.values[0] || 'Unknown',
+      medium: row.dimensionValues[1]?.values[0] || 'Unknown',
+      sessions: parseInt(row.metricValues[0]?.values[0] || '0'),
+      users: parseInt(row.metricValues[1]?.values[0] || '0'),
+      percentage: totalSessions > 0 ? 
+        (parseInt(row.metricValues[0]?.values[0] || '0') / totalSessions) * 100 : 0
+    }))
+  }
+
+  /**
+   * Get page performance
+   */
+  async getPagePerformance(startDate: string, endDate: string): Promise<Array<{
+    page: string
+    pageviews: number
+    uniquePageviews: number
+    avgTimeOnPage: number
+    exitRate: number
+  }>> {
+    const request: GAReportRequest = {
+      dateRanges: [{
+        startDate,
+        endDate
+      }],
+      dimensions: [
+        { name: 'pagePath' }
+      ],
+      metrics: [
+        { expression: 'screenPageViews' },
+        { expression: 'sessions' },
+        { expression: 'averageSessionDuration' },
+        { expression: 'exitRate' }
+      ],
+      orderBys: [{
+        metric: { metricName: 'screenPageViews' },
+        desc: true
+      }],
+      pageSize: 20
+    }
+
+    const response = await this.runReport(request)
+    
+    if (!response.rows || response.rows.length === 0) {
+      return []
+    }
+
+    return response.rows.map(row => ({
+      page: row.dimensionValues[0]?.values[0] || 'Unknown',
+      pageviews: parseInt(row.metricValues[0]?.values[0] || '0'),
+      uniquePageviews: parseInt(row.metricValues[1]?.values[0] || '0'),
+      avgTimeOnPage: parseFloat(row.metricValues[2]?.values[0] || '0'),
+      exitRate: parseFloat(row.metricValues[3]?.values[0] || '0')
+    }))
+  }
+
+  /**
+   * Get device and browser data
+   */
+  async getDeviceData(startDate: string, endDate: string): Promise<{
+    devices: Array<{ category: string; sessions: number; percentage: number }>
+    browsers: Array<{ browser: string; sessions: number; percentage: number }>
+    operatingSystems: Array<{ os: string; sessions: number; percentage: number }>
+  }> {
+    const requests: GAReportRequest[] = [
+      // Device categories
+      {
+        dateRanges: [{ startDate, endDate }],
+        dimensions: [{ name: 'deviceCategory' }],
+        metrics: [{ expression: 'sessions' }],
+        orderBys: [{ metric: { metricName: 'sessions' }, desc: true }]
       },
-      dateRecorded: new Date()
-    }
-  })
-}
+      // Browsers
+      {
+        dateRanges: [{ startDate, endDate }],
+        dimensions: [{ name: 'browser' }],
+        metrics: [{ expression: 'sessions' }],
+        orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
+        pageSize: 10
+      },
+      // Operating Systems
+      {
+        dateRanges: [{ startDate, endDate }],
+        dimensions: [{ name: 'operatingSystem' }],
+        metrics: [{ expression: 'sessions' }],
+        orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
+        pageSize: 10
+      }
+    ]
 
-async function handlePropertyUpdate(integrationId: string, data: any): Promise<void> {
-  // Handle property configuration updates
-  await prisma.integration.update({
-    where: { id: integrationId },
-    data: {
-      lastSyncAt: new Date()
+    const responses = await this.batchRunReports(requests)
+
+    const calculatePercentages = (rows: GAReportRow[]) => {
+      const totalSessions = rows.reduce((sum, row) => 
+        sum + parseInt(row.metricValues[0]?.values[0] || '0'), 0)
+      
+      return rows.map(row => ({
+        sessions: parseInt(row.metricValues[0]?.values[0] || '0'),
+        percentage: totalSessions > 0 ? 
+          (parseInt(row.metricValues[0]?.values[0] || '0') / totalSessions) * 100 : 0
+      }))
     }
-  })
+
+    return {
+      devices: (responses[0]?.rows || []).map((row, index) => {
+        const percentages = calculatePercentages(responses[0]?.rows || [])
+        return {
+          category: row.dimensionValues[0]?.values[0] || 'Unknown',
+          sessions: percentages[index]?.sessions || 0,
+          percentage: percentages[index]?.percentage || 0
+        }
+      }),
+      browsers: (responses[1]?.rows || []).map((row, index) => {
+        const percentages = calculatePercentages(responses[1]?.rows || [])
+        return {
+          browser: row.dimensionValues[0]?.values[0] || 'Unknown',
+          sessions: percentages[index]?.sessions || 0,
+          percentage: percentages[index]?.percentage || 0
+        }
+      }),
+      operatingSystems: (responses[2]?.rows || []).map((row, index) => {
+        const percentages = calculatePercentages(responses[2]?.rows || [])
+        return {
+          os: row.dimensionValues[0]?.values[0] || 'Unknown',
+          sessions: percentages[index]?.sessions || 0,
+          percentage: percentages[index]?.percentage || 0
+        }
+      })
+    }
+  }
+
+  /**
+   * Get conversion data (if goals are set up)
+   */
+  async getConversions(startDate: string, endDate: string): Promise<Array<{
+    eventName: string
+    eventCount: number
+    conversionRate: number
+  }>> {
+    const request: GAReportRequest = {
+      dateRanges: [{
+        startDate,
+        endDate
+      }],
+      dimensions: [
+        { name: 'eventName' }
+      ],
+      metrics: [
+        { expression: 'eventCount' },
+        { expression: 'conversions' }
+      ],
+      dimensionFilterClauses: [{
+        filters: [{
+          dimensionName: 'eventName',
+          operator: 'IN_LIST',
+          expressions: ['purchase', 'sign_up', 'contact', 'download', 'subscribe']
+        }]
+      }],
+      orderBys: [{
+        metric: { metricName: 'eventCount' },
+        desc: true
+      }]
+    }
+
+    const response = await this.runReport(request)
+    
+    if (!response.rows || response.rows.length === 0) {
+      return []
+    }
+
+    return response.rows.map(row => {
+      const eventCount = parseInt(row.metricValues[0]?.values[0] || '0')
+      const conversions = parseInt(row.metricValues[1]?.values[0] || '0')
+      
+      return {
+        eventName: row.dimensionValues[0]?.values[0] || 'Unknown',
+        eventCount,
+        conversionRate: eventCount > 0 ? (conversions / eventCount) * 100 : 0
+      }
+    })
+  }
+
+  /**
+   * Get real-time active users
+   */
+  async getActiveUsers(): Promise<{
+    activeUsers: number
+    activeUsersLast24h: number
+    topPages: Array<{ page: string; activeUsers: number }>
+  }> {
+    const requests = [
+      // Current active users
+      {
+        metrics: [{ expression: 'activeUsers' }]
+      },
+      // Active users by page
+      {
+        dimensions: [{ name: 'pagePath' }],
+        metrics: [{ expression: 'activeUsers' }],
+        orderBys: [{ metric: { metricName: 'activeUsers' }, desc: true }],
+        pageSize: 10
+      }
+    ]
+
+    try {
+      const [currentResponse, pagesResponse] = await Promise.all([
+        this.runRealtimeReport(requests[0]),
+        this.runRealtimeReport(requests[1])
+      ])
+
+      // Get 24h active users from regular API
+      const yesterday = new Date()
+      yesterday.setDate(yesterday.getDate() - 1)
+      
+      const dailyMetrics = await this.getWebsiteMetrics(
+        yesterday.toISOString().split('T')[0],
+        new Date().toISOString().split('T')[0]
+      )
+
+      return {
+        activeUsers: parseInt(currentResponse.rows?.[0]?.metricValues[0]?.values[0] || '0'),
+        activeUsersLast24h: dailyMetrics.users,
+        topPages: (pagesResponse.rows || []).map(row => ({
+          page: row.dimensionValues[0]?.values[0] || 'Unknown',
+          activeUsers: parseInt(row.metricValues[0]?.values[0] || '0')
+        }))
+      }
+    } catch (error) {
+      console.error('Error fetching real-time data:', error)
+      return {
+        activeUsers: 0,
+        activeUsersLast24h: 0,
+        topPages: []
+      }
+    }
+  }
+
+  /**
+   * Sync historical data for initial setup
+   */
+  async syncHistoricalData(integrationId: string, days: number = 30): Promise<{
+    sessions: number
+    users: number
+    pageviews: number
+  }> {
+    const endDate = new Date().toISOString().split('T')[0]
+    const startDate = new Date()
+    startDate.setDate(startDate.getDate() - days)
+    const startDateStr = startDate.toISOString().split('T')[0]
+
+    try {
+      // Get daily metrics for the period
+      const request: GAReportRequest = {
+        dateRanges: [{
+          startDate: startDateStr,
+          endDate
+        }],
+        dimensions: [
+          { name: 'date' }
+        ],
+        metrics: [
+          { expression: 'sessions' },
+          { expression: 'totalUsers' },
+          { expression: 'screenPageViews' },
+          { expression: 'newUsers' },
+          { expression: 'averageSessionDuration' },
+          { expression: 'bounceRate' }
+        ],
+        orderBys: [{
+          dimension: { dimensionName: 'date' },
+          desc: false
+        }]
+      }
+
+      const response = await this.runReport(request)
+      
+      if (!response.rows || response.rows.length === 0) {
+        return { sessions: 0, users: 0, pageviews: 0 }
+      }
+
+      // Store daily data points
+      const dataPoints = []
+      for (const row of response.rows) {
+        const date = row.dimensionValues[0]?.values[0] || ''
+        const dateRecorded = new Date(`${date.slice(0,4)}-${date.slice(4,6)}-${date.slice(6,8)}`)
+        
+        const sessions = parseInt(row.metricValues[0]?.values[0] || '0')
+        const users = parseInt(row.metricValues[1]?.values[0] || '0')
+        const pageviews = parseInt(row.metricValues[2]?.values[0] || '0')
+        const newUsers = parseInt(row.metricValues[3]?.values[0] || '0')
+        const avgSessionDuration = parseFloat(row.metricValues[4]?.values[0] || '0')
+        const bounceRate = parseFloat(row.metricValues[5]?.values[0] || '0')
+
+        // Sessions data point
+        dataPoints.push({
+          integrationId,
+          metricType: 'sessions',
+          value: sessions,
+          metadata: {
+            date,
+            source: 'google_analytics_sync'
+          },
+          dateRecorded
+        })
+
+        // Users data point
+        dataPoints.push({
+          integrationId,
+          metricType: 'users',
+          value: users,
+          metadata: {
+            date,
+            newUsers,
+            source: 'google_analytics_sync'
+          },
+          dateRecorded
+        })
+
+        // Pageviews data point
+        dataPoints.push({
+          integrationId,
+          metricType: 'pageviews',
+          value: pageviews,
+          metadata: {
+            date,
+            avgSessionDuration,
+            bounceRate,
+            source: 'google_analytics_sync'
+          },
+          dateRecorded
+        })
+      }
+
+      // Save all data points
+      await prisma.dataPoint.createMany({ data: dataPoints })
+
+      // Return summary counts
+      const totalSessions = response.rows.reduce((sum, row) => 
+        sum + parseInt(row.metricValues[0]?.values[0] || '0'), 0)
+      const totalUsers = response.rows.reduce((sum, row) => 
+        sum + parseInt(row.metricValues[1]?.values[0] || '0'), 0)
+      const totalPageviews = response.rows.reduce((sum, row) => 
+        sum + parseInt(row.metricValues[2]?.values[0] || '0'), 0)
+
+      console.log(`Synced ${dataPoints.length} Google Analytics data points`)
+      
+      return {
+        sessions: totalSessions,
+        users: totalUsers,
+        pageviews: totalPageviews
+      }
+    } catch (error) {
+      console.error('Error syncing Google Analytics historical data:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Generate OAuth authorization URL
+   */
+  static generateAuthUrl(state: string): string {
+    const redirectUri = `${process.env.NEXTAUTH_URL || process.env.APP_URL}/api/integrations/google-analytics/callback`
+    
+    const params = new URLSearchParams({
+      client_id: process.env.GOOGLE_CLIENT_ID!,
+      redirect_uri: redirectUri,
+      scope: 'https://www.googleapis.com/auth/analytics.readonly',
+      response_type: 'code',
+      access_type: 'offline',
+      prompt: 'consent',
+      state
+    })
+
+    return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
+  }
+
+  /**
+   * Exchange authorization code for tokens
+   */
+  static async exchangeCodeForTokens(code: string): Promise<{
+    access_token: string
+    refresh_token: string
+    expires_in: number
+    scope: string
+  }> {
+    const redirectUri = `${process.env.NEXTAUTH_URL || process.env.APP_URL}/api/integrations/google-analytics/callback`
+    
+    const response = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: new URLSearchParams({
+        client_id: process.env.GOOGLE_CLIENT_ID!,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+        code,
+        grant_type: 'authorization_code',
+        redirect_uri: redirectUri
+      })
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error')
+      throw new Error(`Failed to exchange code for tokens: ${response.status} ${response.statusText} - ${errorText}`)
+    }
+
+    return response.json()
+  }
+
+  /**
+   * Get available GA4 properties for a user
+   */
+  static async getAvailableProperties(accessToken: string): Promise<Array<{
+    propertyId: string
+    displayName: string
+    websiteUrl?: string
+  }>> {
+    const response = await fetch('https://analyticsadmin.googleapis.com/v1beta/properties', {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      }
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error')
+      throw new Error(`Failed to fetch properties: ${response.status} ${response.statusText} - ${errorText}`)
+    }
+
+    const data = await response.json()
+    
+    return (data.properties || []).map((property: any) => ({
+      propertyId: property.name.split('/')[1], // Extract ID from "properties/123456789"
+      displayName: property.displayName,
+      websiteUrl: property.websiteUrl
+    }))
+  }
 }
