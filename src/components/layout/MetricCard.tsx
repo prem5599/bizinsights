@@ -2,7 +2,7 @@
 'use client'
 
 import { LucideIcon, TrendingUp, TrendingDown, Minus } from 'lucide-react'
-import { cn, formatCurrency, formatNumber, formatPercentage } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 
 interface MetricCardProps {
   title: string
@@ -11,45 +11,59 @@ interface MetricCardProps {
   trend?: 'up' | 'down' | 'neutral'
   format?: 'currency' | 'number' | 'percentage'
   icon?: LucideIcon
-  isLoading?: boolean
   description?: string
+  isLoading?: boolean
   className?: string
+  prefix?: string
+  suffix?: string
 }
 
 export function MetricCard({
   title,
   value,
   change,
-  trend = 'neutral',
+  trend,
   format = 'number',
   icon: Icon,
-  isLoading = false,
   description,
-  className
+  isLoading = false,
+  className,
+  prefix,
+  suffix
 }: MetricCardProps) {
   
-  const formatValue = (val: number | string) => {
+  const formatValue = (val: number | string, format: string): string => {
     if (typeof val === 'string') return val
     
     switch (format) {
       case 'currency':
-        return formatCurrency(val)
+        return new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: 'USD',
+          minimumFractionDigits: val % 1 === 0 ? 0 : 2
+        }).format(val)
       case 'percentage':
-        return `${val}%`
+        return `${val.toFixed(1)}%`
       case 'number':
       default:
-        return formatNumber(val)
+        return new Intl.NumberFormat('en-US').format(val)
     }
+  }
+
+  const formatChange = (change: number): string => {
+    const sign = change > 0 ? '+' : ''
+    return `${sign}${change.toFixed(1)}%`
   }
 
   const getTrendIcon = () => {
     switch (trend) {
       case 'up':
-        return TrendingUp
+        return <TrendingUp className="h-4 w-4 text-green-500" />
       case 'down':
-        return TrendingDown
+        return <TrendingDown className="h-4 w-4 text-red-500" />
+      case 'neutral':
       default:
-        return Minus
+        return <Minus className="h-4 w-4 text-gray-500" />
     }
   }
 
@@ -59,84 +73,78 @@ export function MetricCard({
         return 'text-green-600'
       case 'down':
         return 'text-red-600'
+      case 'neutral':
       default:
-        return 'text-slate-500'
+        return 'text-gray-600'
     }
   }
 
-  const TrendIcon = getTrendIcon()
-
   if (isLoading) {
     return (
-      <div 
-        className={cn(
-          "bg-white rounded-lg border border-slate-200 p-6 shadow-sm",
-          className
-        )}
-        data-testid="metric-loading"
-      >
+      <div className={cn(
+        "bg-white rounded-lg border border-gray-200 p-6 shadow-sm",
+        className
+      )}>
         <div className="animate-pulse">
           <div className="flex items-center justify-between mb-4">
-            <div className="h-4 bg-slate-200 rounded w-20"></div>
-            {Icon && (
-              <div className="h-5 w-5 bg-slate-200 rounded"></div>
-            )}
+            <div className="h-4 bg-gray-200 rounded w-20"></div>
+            <div className="h-6 w-6 bg-gray-200 rounded"></div>
           </div>
-          <div className="h-8 bg-slate-200 rounded w-24 mb-2"></div>
-          <div className="h-3 bg-slate-200 rounded w-16"></div>
+          <div className="h-8 bg-gray-200 rounded w-24 mb-2"></div>
+          <div className="h-4 bg-gray-200 rounded w-16"></div>
         </div>
       </div>
     )
   }
 
   return (
-    <div 
-      className={cn(
-        "bg-white rounded-lg border border-slate-200 p-6 shadow-sm hover:shadow-md transition-shadow",
-        className
-      )}
-    >
+    <div className={cn(
+      "bg-white rounded-lg border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow duration-200",
+      className
+    )}>
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-medium text-slate-600 truncate">
+        <h3 className="text-sm font-medium text-gray-600 truncate">
           {title}
         </h3>
         {Icon && (
-          <Icon className="h-5 w-5 text-slate-400 flex-shrink-0" />
+          <div className="flex-shrink-0">
+            <Icon className="h-5 w-5 text-gray-400" />
+          </div>
         )}
       </div>
 
       {/* Value */}
-      <div className="mb-2">
-        <div className="text-2xl font-bold text-slate-900">
-          {formatValue(value)}
-        </div>
-      </div>
-
-      {/* Change and Description */}
-      <div className="flex items-center justify-between">
-        {change !== undefined && (
-          <div className={cn(
-            "flex items-center text-sm font-medium",
-            getTrendColor()
-          )}>
-            <TrendIcon className="h-4 w-4 mr-1" />
-            {formatPercentage(change)}
-          </div>
+      <div className="flex items-baseline space-x-2 mb-2">
+        {prefix && (
+          <span className="text-sm text-gray-500">{prefix}</span>
         )}
-        
-        {description && (
-          <span className="text-xs text-slate-500 ml-2 truncate">
-            {description}
-          </span>
+        <p className="text-2xl font-bold text-gray-900 truncate">
+          {formatValue(value, format)}
+        </p>
+        {suffix && (
+          <span className="text-sm text-gray-500">{suffix}</span>
         )}
       </div>
 
-      {/* Additional trend context */}
+      {/* Change indicator */}
       {change !== undefined && (
-        <div className="mt-2 text-xs text-slate-500">
-          vs. previous period
+        <div className="flex items-center space-x-1">
+          {getTrendIcon()}
+          <span className={cn("text-sm font-medium", getTrendColor())}>
+            {formatChange(change)}
+          </span>
+          {description && (
+            <span className="text-sm text-gray-500 ml-1">
+              {description}
+            </span>
+          )}
         </div>
+      )}
+
+      {/* Description without change */}
+      {change === undefined && description && (
+        <p className="text-sm text-gray-500 mt-1">{description}</p>
       )}
     </div>
   )
