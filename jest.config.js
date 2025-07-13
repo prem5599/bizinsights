@@ -14,14 +14,31 @@ const customJestConfig = {
   // Test environment
   testEnvironment: 'jest-environment-jsdom',
   
-  // Module name mapping for absolute imports
+  // Module name mapping for absolute imports and mocks
   moduleNameMapping: {
+    // Path mappings
     '^@/components/(.*)$': '<rootDir>/src/components/$1',
     '^@/lib/(.*)$': '<rootDir>/src/lib/$1',
     '^@/app/(.*)$': '<rootDir>/src/app/$1',
     '^@/hooks/(.*)$': '<rootDir>/src/hooks/$1',
     '^@/types/(.*)$': '<rootDir>/src/types/$1',
     '^@/utils/(.*)$': '<rootDir>/src/utils/$1',
+    
+    // Mock CSS modules
+    '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
+    
+    // Mock static assets
+    '\\.(jpg|jpeg|png|gif|eot|otf|webp|svg|ttf|woff|woff2|mp4|webm|wav|mp3|m4a|aac|oga)$': '<rootDir>/__mocks__/fileMock.js',
+    
+    // Mock Prisma client
+    '@/lib/prisma': '<rootDir>/__mocks__/prisma.js',
+    
+    // Mock NextAuth
+    'next-auth': '<rootDir>/__mocks__/next-auth.js',
+    'next-auth/react': '<rootDir>/__mocks__/next-auth-react.js',
+    
+    // Mock integrations
+    '@/lib/integrations/(.*)': '<rootDir>/__mocks__/integrations.js',
   },
   
   // Test patterns
@@ -73,25 +90,6 @@ const customJestConfig = {
       lines: 70,
       statements: 70,
     },
-  },
-  
-  // Mock modules
-  moduleNameMapping: {
-    // Mock CSS modules
-    '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
-    
-    // Mock static assets
-    '\\.(jpg|jpeg|png|gif|eot|otf|webp|svg|ttf|woff|woff2|mp4|webm|wav|mp3|m4a|aac|oga)$': '<rootDir>/__mocks__/fileMock.js',
-    
-    // Mock Prisma client
-    '@/lib/prisma': '<rootDir>/__mocks__/prisma.js',
-    
-    // Mock NextAuth
-    'next-auth': '<rootDir>/__mocks__/next-auth.js',
-    'next-auth/react': '<rootDir>/__mocks__/next-auth-react.js',
-    
-    // Mock integrations
-    '@/lib/integrations/(.*)': '<rootDir>/__mocks__/integrations.js',
   },
   
   // Global setup and teardown
