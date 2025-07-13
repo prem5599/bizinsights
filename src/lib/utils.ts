@@ -1,226 +1,283 @@
 // src/lib/utils.ts
-import { type ClassValue, clsx } from "clsx"
-import { twMerge } from "tailwind-merge"
+import { type ClassValue, clsx } from 'clsx'
+import { twMerge } from 'tailwind-merge'
 
 /**
- * Combine class names with tailwind-merge for proper Tailwind CSS class merging
+ * Utility function to merge Tailwind CSS classes with conditional logic
+ * Combines clsx for conditional classes and tailwind-merge for proper Tailwind merging
  */
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
 /**
- * Format currency values
+ * Date and Time Utilities
  */
-export function formatCurrency(
-  amount: number,
-  currency: string = 'USD',
-  locale: string = 'en-US'
-): string {
-  return new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(amount)
-}
 
 /**
- * Format numbers with abbreviations (K, M, B)
+ * Format a date to a human-readable string
  */
-export function formatNumber(num: number, decimals: number = 1): string {
-  if (num === 0) return '0'
+export function formatDate(date: Date | string | null | undefined): string {
+  if (!date) return 'N/A'
   
-  const k = 1000
-  const dm = decimals < 0 ? 0 : decimals
-  const sizes = ['', 'K', 'M', 'B', 'T']
+  const d = typeof date === 'string' ? new Date(date) : date
   
-  const i = Math.floor(Math.log(Math.abs(num)) / Math.log(k))
+  if (isNaN(d.getTime())) return 'Invalid Date'
   
-  if (i === 0) return num.toString()
-  
-  return parseFloat((num / Math.pow(k, i)).toFixed(dm)) + sizes[i]
-}
-
-/**
- * Format percentage values
- */
-export function formatPercentage(value: number, decimals: number = 1): string {
-  return `${value.toFixed(decimals)}%`
-}
-
-/**
- * Format dates in a human-readable way
- */
-export function formatDate(
-  date: Date | string,
-  options: Intl.DateTimeFormatOptions = {}
-): string {
-  const dateObj = typeof date === 'string' ? new Date(date) : date
-  
-  const defaultOptions: Intl.DateTimeFormatOptions = {
+  return new Intl.DateTimeFormat('en-US', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
-    ...options
+  }).format(d)
+}
+
+/**
+ * Format a date to include time
+ */
+export function formatDateTime(date: Date | string | null | undefined): string {
+  if (!date) return 'N/A'
+  
+  const d = typeof date === 'string' ? new Date(date) : date
+  
+  if (isNaN(d.getTime())) return 'Invalid Date'
+  
+  return new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(d)
+}
+
+/**
+ * Get relative time (e.g., "2 hours ago", "3 days ago")
+ */
+export function formatRelativeTime(date: Date | string | null | undefined): string {
+  if (!date) return 'N/A'
+  
+  const d = typeof date === 'string' ? new Date(date) : date
+  
+  if (isNaN(d.getTime())) return 'Invalid Date'
+  
+  const now = new Date()
+  const diff = now.getTime() - d.getTime()
+  
+  const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
+  
+  const units = [
+    { unit: 'year', ms: 31536000000 },
+    { unit: 'month', ms: 2628000000 },
+    { unit: 'day', ms: 86400000 },
+    { unit: 'hour', ms: 3600000 },
+    { unit: 'minute', ms: 60000 },
+    { unit: 'second', ms: 1000 },
+  ] as const
+  
+  for (const { unit, ms } of units) {
+    const value = Math.round(diff / ms)
+    if (Math.abs(value) >= 1) {
+      return rtf.format(-value, unit)
+    }
   }
   
-  return dateObj.toLocaleDateString('en-US', defaultOptions)
+  return 'just now'
 }
 
 /**
- * Format relative time (e.g., "2 hours ago")
+ * Currency and Number Utilities
  */
-export function formatRelativeTime(date: Date | string): string {
-  const dateObj = typeof date === 'string' ? new Date(date) : date
-  const now = new Date()
-  const diffInSeconds = Math.floor((now.getTime() - dateObj.getTime()) / 1000)
+
+/**
+ * Format a number as currency
+ */
+export function formatCurrency(
+  amount: number | string | null | undefined,
+  currency: string = 'USD',
+  locale: string = 'en-US'
+): string {
+  if (amount === null || amount === undefined || amount === '') return '$0.00'
   
-  if (diffInSeconds < 60) return 'Just now'
-  if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} minutes ago`
-  if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`
-  if (diffInSeconds < 2592000) return `${Math.floor(diffInSeconds / 86400)} days ago`
-  if (diffInSeconds < 31536000) return `${Math.floor(diffInSeconds / 2592000)} months ago`
-  return `${Math.floor(diffInSeconds / 31536000)} years ago`
+  const num = typeof amount === 'string' ? parseFloat(amount) : amount
+  
+  if (isNaN(num)) return '$0.00'
+  
+  return new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(num)
 }
 
 /**
- * Generate a random ID
+ * Format a number with proper thousand separators
  */
-export function generateId(length: number = 8): string {
-  return Math.random().toString(36).substring(2, length + 2)
+export function formatNumber(
+  num: number | string | null | undefined,
+  options?: Intl.NumberFormatOptions
+): string {
+  if (num === null || num === undefined || num === '') return '0'
+  
+  const number = typeof num === 'string' ? parseFloat(num) : num
+  
+  if (isNaN(number)) return '0'
+  
+  return new Intl.NumberFormat('en-US', options).format(number)
 }
 
 /**
- * Create a slug from a string
+ * Format large numbers with abbreviations (K, M, B)
  */
-export function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\s-]/g, '') // Remove special characters
-    .replace(/[\s_-]+/g, '-') // Replace spaces and underscores with hyphens
-    .replace(/^-+|-+$/g, '') // Remove leading and trailing hyphens
+export function formatCompactNumber(num: number | string | null | undefined): string {
+  if (num === null || num === undefined || num === '') return '0'
+  
+  const number = typeof num === 'string' ? parseFloat(num) : num
+  
+  if (isNaN(number)) return '0'
+  
+  return new Intl.NumberFormat('en-US', {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(number)
 }
 
 /**
- * Capitalize first letter of each word
+ * Format percentage
  */
-export function titleCase(text: string): string {
-  return text.replace(/\w\S*/g, (txt) => 
+export function formatPercentage(
+  value: number | string | null | undefined,
+  decimals: number = 1
+): string {
+  if (value === null || value === undefined || value === '') return '0%'
+  
+  const num = typeof value === 'string' ? parseFloat(value) : value
+  
+  if (isNaN(num)) return '0%'
+  
+  return new Intl.NumberFormat('en-US', {
+    style: 'percent',
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(num / 100)
+}
+
+/**
+ * String Utilities
+ */
+
+/**
+ * Capitalize the first letter of a string
+ */
+export function capitalize(str: string | null | undefined): string {
+  if (!str) return ''
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase()
+}
+
+/**
+ * Convert string to title case
+ */
+export function toTitleCase(str: string | null | undefined): string {
+  if (!str) return ''
+  return str.replace(/\w\S*/g, (txt) => 
     txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase()
   )
 }
 
 /**
- * Truncate text to a specific length
+ * Generate a slug from a string
  */
-export function truncate(text: string, length: number, suffix: string = '...'): string {
+export function slugify(str: string): string {
+  return str
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[\s_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+/**
+ * Truncate text with ellipsis
+ */
+export function truncate(text: string | null | undefined, length: number = 100): string {
+  if (!text) return ''
   if (text.length <= length) return text
-  return text.substring(0, length).trim() + suffix
+  return text.slice(0, length).trim() + '...'
 }
 
 /**
- * Deep clone an object
+ * Extract initials from a name
  */
-export function deepClone<T>(obj: T): T {
-  if (obj === null || typeof obj !== 'object') return obj
-  if (obj instanceof Date) return new Date(obj.getTime()) as unknown as T
-  if (obj instanceof Array) return obj.map(item => deepClone(item)) as unknown as T
-  if (typeof obj === 'object') {
-    const clonedObj = {} as { [key: string]: any }
-    for (const key in obj) {
-      if (obj.hasOwnProperty(key)) {
-        clonedObj[key] = deepClone(obj[key])
-      }
-    }
-    return clonedObj as T
-  }
-  return obj
-}
-
-/**
- * Debounce function
- */
-export function debounce<T extends (...args: any[]) => any>(
-  func: T,
-  delay: number
-): (...args: Parameters<T>) => void {
-  let timeoutId: NodeJS.Timeout
-  return (...args: Parameters<T>) => {
-    clearTimeout(timeoutId)
-    timeoutId = setTimeout(() => func.apply(null, args), delay)
-  }
-}
-
-/**
- * Throttle function
- */
-export function throttle<T extends (...args: any[]) => any>(
-  func: T,
-  limit: number
-): (...args: Parameters<T>) => void {
-  let inThrottle: boolean
-  return (...args: Parameters<T>) => {
-    if (!inThrottle) {
-      func.apply(null, args)
-      inThrottle = true
-      setTimeout(() => inThrottle = false, limit)
-    }
-  }
-}
-
-/**
- * Check if a value is empty (null, undefined, empty string, empty array, empty object)
- */
-export function isEmpty(value: any): boolean {
-  if (value === null || value === undefined) return true
-  if (typeof value === 'string') return value.trim().length === 0
-  if (Array.isArray(value)) return value.length === 0
-  if (typeof value === 'object') return Object.keys(value).length === 0
-  return false
-}
-
-/**
- * Get initials from a name
- */
-export function getInitials(name: string): string {
+export function getInitials(name: string | null | undefined): string {
+  if (!name) return ''
+  
   return name
     .split(' ')
     .map(word => word.charAt(0))
     .join('')
     .toUpperCase()
-    .substring(0, 2)
+    .slice(0, 2)
 }
 
 /**
- * Generate a random color
+ * Validation Utilities
  */
-export function generateColor(): string {
-  const colors = [
-    '#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16',
-    '#22c55e', '#10b981', '#14b8a6', '#06b6d4', '#0ea5e9',
-    '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#d946ef',
-    '#ec4899', '#f43f5e'
-  ]
-  return colors[Math.floor(Math.random() * colors.length)]
+
+/**
+ * Check if email is valid
+ */
+export function isValidEmail(email: string): boolean {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  return emailRegex.test(email)
 }
 
 /**
- * Calculate percentage change between two values
+ * Check if URL is valid
  */
-export function calculatePercentageChange(current: number, previous: number): number {
-  if (previous === 0) return current > 0 ? 100 : 0
-  return ((current - previous) / previous) * 100
+export function isValidUrl(url: string): boolean {
+  try {
+    new URL(url)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Check if string is a valid UUID
+ */
+export function isValidUUID(uuid: string): boolean {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+  return uuidRegex.test(uuid)
+}
+
+/**
+ * Array and Object Utilities
+ */
+
+/**
+ * Remove duplicates from array
+ */
+export function unique<T>(array: T[]): T[] {
+  return [...new Set(array)]
+}
+
+/**
+ * Group array of objects by key
+ */
+export function groupBy<T, K extends keyof T>(array: T[], key: K): Record<string, T[]> {
+  return array.reduce((groups, item) => {
+    const group = String(item[key])
+    groups[group] = groups[group] || []
+    groups[group].push(item)
+    return groups
+  }, {} as Record<string, T[]>)
 }
 
 /**
  * Sort array of objects by key
  */
-export function sortBy<T>(
-  array: T[],
-  key: keyof T,
-  direction: 'asc' | 'desc' = 'asc'
-): T[] {
+export function sortBy<T>(array: T[], key: keyof T, direction: 'asc' | 'desc' = 'asc'): T[] {
   return [...array].sort((a, b) => {
     const aVal = a[key]
     const bVal = b[key]
@@ -232,57 +289,152 @@ export function sortBy<T>(
 }
 
 /**
- * Group array of objects by key
+ * Check if object is empty
  */
-export function groupBy<T>(array: T[], key: keyof T): Record<string, T[]> {
-  return array.reduce((groups, item) => {
-    const group = String(item[key])
-    groups[group] = groups[group] || []
-    groups[group].push(item)
-    return groups
-  }, {} as Record<string, T[]>)
+export function isEmpty(obj: any): boolean {
+  if (obj == null) return true
+  if (Array.isArray(obj)) return obj.length === 0
+  if (typeof obj === 'object') return Object.keys(obj).length === 0
+  return false
 }
 
 /**
- * Retry a promise-based function with exponential backoff
+ * Deep clone an object
  */
-export async function retry<T>(
-  fn: () => Promise<T>,
-  maxAttempts: number = 3,
-  delay: number = 1000
-): Promise<T> {
-  let attempt = 1
+export function deepClone<T>(obj: T): T {
+  if (obj === null || typeof obj !== 'object') return obj
+  if (obj instanceof Date) return new Date(obj.getTime()) as any
+  if (Array.isArray(obj)) return obj.map(item => deepClone(item)) as any
   
-  while (attempt <= maxAttempts) {
-    try {
-      return await fn()
-    } catch (error) {
-      if (attempt === maxAttempts) throw error
-      
-      await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, attempt - 1)))
-      attempt++
+  const cloned = {} as T
+  for (const key in obj) {
+    if (obj.hasOwnProperty(key)) {
+      cloned[key] = deepClone(obj[key])
     }
   }
+  return cloned
+}
+
+/**
+ * Color and Theme Utilities
+ */
+
+/**
+ * Generate a consistent color based on a string (useful for avatars, charts, etc.)
+ */
+export function getColorFromString(str: string): string {
+  const colors = [
+    'bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-yellow-500',
+    'bg-purple-500', 'bg-pink-500', 'bg-indigo-500', 'bg-teal-500',
+    'bg-orange-500', 'bg-cyan-500', 'bg-lime-500', 'bg-amber-500'
+  ]
   
-  throw new Error('Max attempts reached')
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i)
+    hash = ((hash << 5) - hash) + char
+    hash = hash & hash // Convert to 32-bit integer
+  }
+  
+  return colors[Math.abs(hash) % colors.length]
 }
 
 /**
- * Validate email format
+ * Business Logic Utilities
  */
-export function isValidEmail(email: string): boolean {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  return emailRegex.test(email)
+
+/**
+ * Calculate percentage change between two values
+ */
+export function calculatePercentageChange(oldValue: number, newValue: number): number {
+  if (oldValue === 0) return newValue === 0 ? 0 : 100
+  return ((newValue - oldValue) / Math.abs(oldValue)) * 100
 }
 
 /**
- * Validate URL format
+ * Format growth indicator with proper styling classes
  */
-export function isValidUrl(url: string): boolean {
-  try {
-    new URL(url)
-    return true
-  } catch {
-    return false
+export function formatGrowth(change: number): {
+  value: string
+  color: string
+  icon: 'up' | 'down' | 'neutral'
+} {
+  const formatted = formatPercentage(Math.abs(change))
+  
+  if (change > 0) {
+    return { value: `+${formatted}`, color: 'text-green-600', icon: 'up' }
+  } else if (change < 0) {
+    return { value: `-${formatted}`, color: 'text-red-600', icon: 'down' }
+  } else {
+    return { value: formatted, color: 'text-gray-600', icon: 'neutral' }
   }
 }
+
+/**
+ * Generate a random ID (fallback for when crypto.randomUUID is not available)
+ */
+export function generateId(prefix: string = ''): string {
+  const timestamp = Date.now().toString(36)
+  const randomPart = Math.random().toString(36).substr(2, 9)
+  return prefix ? `${prefix}-${timestamp}-${randomPart}` : `${timestamp}-${randomPart}`
+}
+
+/**
+ * Debounce function for search inputs and API calls
+ */
+export function debounce<T extends (...args: any[]) => any>(
+  func: T,
+  wait: number
+): (...args: Parameters<T>) => void {
+  let timeout: NodeJS.Timeout
+  
+  return (...args: Parameters<T>) => {
+    clearTimeout(timeout)
+    timeout = setTimeout(() => func(...args), wait)
+  }
+}
+
+/**
+ * Throttle function for scroll events and frequent calls
+ */
+export function throttle<T extends (...args: any[]) => any>(
+  func: T,
+  limit: number
+): (...args: Parameters<T>) => void {
+  let inThrottle: boolean
+  
+  return (...args: Parameters<T>) => {
+    if (!inThrottle) {
+      func(...args)
+      inThrottle = true
+      setTimeout(() => inThrottle = false, limit)
+    }
+  }
+}
+
+/**
+ * File size formatting
+ */
+export function formatFileSize(bytes: number): string {
+  if (bytes === 0) return '0 Bytes'
+  
+  const k = 1024
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+}
+
+/**
+ * Sleep utility for async operations
+ */
+export function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+/**
+ * Environment utilities
+ */
+export const isDevelopment = process.env.NODE_ENV === 'development'
+export const isProduction = process.env.NODE_ENV === 'production'
+export const isBrowser = typeof window !== 'undefined'
