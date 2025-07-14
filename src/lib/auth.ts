@@ -34,6 +34,11 @@ if (missingEnvVars.length > 0) {
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
+  session: {
+    strategy: "jwt", // Use JWT strategy for better compatibility
+    maxAge: 30 * 24 * 60 * 60, // 30 days
+    updateAge: 24 * 60 * 60, // 24 hours
+  },
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
@@ -50,6 +55,7 @@ export const authOptions: NextAuthOptions = {
     CredentialsProvider({
       id: "credentials",
       name: "credentials",
+      type: "credentials",
       credentials: {
         email: {
           label: "Email",
@@ -63,13 +69,25 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         try {
-          // Validate input
-          if (!credentials?.email || !credentials?.password) {
+          console.log("🔐 Credentials provider: Starting authorization")
+          
+          // Enhanced input validation
+          if (!credentials) {
+            console.error("❌ No credentials provided")
+            return null
+          }
+
+          if (!credentials.email || !credentials.password) {
             console.error("❌ Missing email or password in credentials")
             return null
           }
 
-          const validation = signInSchema.safeParse(credentials)
+          // Validate and sanitize input
+          const validation = signInSchema.safeParse({
+            email: credentials.email.trim(),
+            password: credentials.password
+          })
+
           if (!validation.success) {
             console.error("❌ Invalid credentials format:", validation.error.issues)
             return null
@@ -77,7 +95,9 @@ export const authOptions: NextAuthOptions = {
 
           const { email, password } = validation.data
 
-          // Find user in database
+          console.log("🔍 Looking for user with email:", email)
+
+          // Find user in database with detailed logging
           const user = await prisma.user.findUnique({
             where: { email: email.toLowerCase() },
             select: {
@@ -90,29 +110,64 @@ export const authOptions: NextAuthOptions = {
             }
           })
 
-          if (!user || !user.password) {
-            console.error("❌ User not found or no password set:", email)
+          if (!user) {
+            console.error("❌ No user found with email:", email)
             return null
           }
 
-          // Verify password
-          const isPasswordValid = await bcrypt.compare(password, user.password)
+          if (!user.password) {
+            console.error("❌ User found but no password set (may be OAuth only):", email)
+            return null
+          }
+
+          console.log("✅ User found, verifying password...")
+
+          // Verify password with enhanced error handling
+          let isPasswordValid = false
+          try {
+            isPasswordValid = await bcrypt.compare(password, user.password)
+          } catch (bcryptError) {
+            console.error("❌ Password comparison failed:", bcryptError)
+            return null
+          }
+
           if (!isPasswordValid) {
             console.error("❌ Invalid password for user:", email)
             return null
           }
 
-          console.log("✅ User authenticated successfully:", email)
+          console.log("✅ Password verified successfully for user:", email)
 
-          // Return user object (without password)
-          return {
+          // Return user object for session (exclude password)
+          const authenticatedUser = {
             id: user.id,
             email: user.email,
             name: user.name,
             image: user.image,
           }
+
+          console.log("✅ User authenticated successfully:", {
+            id: authenticatedUser.id,
+            email: authenticatedUser.email,
+            name: authenticatedUser.name
+          })
+
+          return authenticatedUser
+
         } catch (error) {
           console.error("❌ Credentials authorization error:", error)
+          
+          // Handle specific database errors
+          if (error instanceof Error) {
+            if (error.message.includes('ECONNREFUSED') || error.message.includes('connect ECONNREFUSED')) {
+              console.error("Database connection refused - check if database is running")
+            } else if (error.message.includes('timeout')) {
+              console.error("Database query timeout")
+            } else if (error.message.includes('P2002')) {
+              console.error("Database constraint violation")
+            }
+          }
+          
           return null
         }
       }
@@ -128,9 +183,18 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async signIn({ user, account, profile }) {
       try {
-        console.log(`🔄 Sign in attempt - Provider: ${account?.provider}, User: ${user.email}`)
+        console.log(`🔄 Sign in callback - Provider: ${account?.provider}, User: ${user.email}`)
         
-        // Allow OAuth sign-ins
+        // Enhanced logging for debugging
+        if (account) {
+          console.log("Account details:", {
+            provider: account.provider,
+            type: account.type,
+            providerAccountId: account.providerAccountId
+          })
+        }
+
+        // Allow OAuth sign-ins (Google)
         if (account?.provider === "google") {
           console.log("✅ Google OAuth sign-in allowed")
           return true
@@ -142,214 +206,183 @@ export const authOptions: NextAuthOptions = {
           return true
         }
 
+        // Block unknown providers
         console.error("❌ Sign-in denied - unsupported provider:", account?.provider)
         return false
+
       } catch (error) {
         console.error("❌ SignIn callback error:", error)
         return false
       }
     },
+    
     async redirect({ url, baseUrl }) {
       console.log(`🔄 Redirect callback - URL: ${url}, Base: ${baseUrl}`)
       
-      // Allows relative callback URLs
-      if (url.startsWith("/")) {
-        const redirectUrl = `${baseUrl}${url}`
-        console.log("✅ Relative redirect to:", redirectUrl)
-        return redirectUrl
-      }
-      
-      // Allows callback URLs on the same origin
-      if (new URL(url).origin === baseUrl) {
-        console.log("✅ Same origin redirect to:", url)
-        return url
-      }
-      
-      // Default redirect
-      const defaultUrl = `${baseUrl}/dashboard`
-      console.log("✅ Default redirect to:", defaultUrl)
-      return defaultUrl
-    },
-    async session({ session, token }) {
       try {
-        // Send properties to the client
-        if (session.user && token.sub) {
-          session.user.id = token.sub
-
-          // Get user's organizations
-          const userWithOrgs = await prisma.user.findUnique({
-            where: { id: token.sub },
-            include: {
-              organizations: {
-                include: {
-                  organization: {
-                    select: {
-                      id: true,
-                      name: true,
-                      slug: true,
-                      subscriptionTier: true
-                    }
-                  }
-                },
-                orderBy: {
-                  createdAt: 'asc'
-                }
-              }
-            }
-          })
-
-          if (userWithOrgs) {
-            // Add organizations to session
-            session.user.organizations = userWithOrgs.organizations.map(member => ({
-              id: member.organization.id,
-              name: member.organization.name,
-              slug: member.organization.slug,
-              role: member.role,
-              subscriptionTier: member.organization.subscriptionTier,
-              joinedAt: member.createdAt
-            }))
-
-            // Set current organization (first one or most recently used)
-            session.user.currentOrganization = session.user.organizations[0] || null
-          }
+        // Handle relative URLs
+        if (url.startsWith("/")) {
+          const redirectUrl = `${baseUrl}${url}`
+          console.log("✅ Relative redirect to:", redirectUrl)
+          return redirectUrl
         }
+        
+        // Handle same-origin URLs
+        if (new URL(url).origin === baseUrl) {
+          console.log("✅ Same origin redirect to:", url)
+          return url
+        }
+        
+        // Default fallback
+        const defaultUrl = `${baseUrl}/dashboard`
+        console.log("✅ Default redirect to:", defaultUrl)
+        return defaultUrl
 
-        return session
       } catch (error) {
-        console.error("❌ Session callback error:", error)
-        return session
+        console.error("❌ Redirect callback error:", error)
+        const fallbackUrl = `${baseUrl}/dashboard`
+        console.log("🔄 Fallback redirect to:", fallbackUrl)
+        return fallbackUrl
       }
     },
-    async jwt({ token, user, account, profile, trigger, session }) {
+    
+    async jwt({ token, user, account }) {
       try {
         // Initial sign in
         if (account && user) {
-          token.accessToken = account.access_token
-          token.refreshToken = account.refresh_token
-          token.accessTokenExpires = account.expires_at
-          console.log("✅ JWT token created for user:", user.email)
+          console.log("🎟️ Creating JWT token for user:", user.email)
+          
+          token.userId = user.id
+          token.email = user.email
+          token.name = user.name
+          token.picture = user.image
+          
+          // Add account provider info
+          token.provider = account.provider
+          token.accountType = account.type
         }
 
-        // Return previous token if the access token has not expired yet
-        if (token.accessTokenExpires && Date.now() < token.accessTokenExpires * 1000) {
-          return token
-        }
-
-        // Access token has expired, try to update it
-        if (token.refreshToken) {
-          console.log("🔄 Refreshing access token")
-          return await refreshAccessToken(token)
+        // Subsequent requests - token already exists
+        if (token.userId) {
+          // You can add additional user data fetching here if needed
+          // For example, to get the latest user info or check if account is still active
         }
 
         return token
+
       } catch (error) {
         console.error("❌ JWT callback error:", error)
         return token
       }
+    },
+    
+    async session({ session, token }) {
+      try {
+        // Send properties to the client
+        if (token) {
+          session.user.id = token.userId as string
+          session.user.email = token.email as string
+          session.user.name = token.name as string
+          session.user.image = token.picture as string
+
+          // Enhanced session with user organizations
+          if (token.userId) {
+            try {
+              const userWithOrgs = await prisma.user.findUnique({
+                where: { id: token.userId as string },
+                include: {
+                  organizations: {
+                    include: {
+                      organization: {
+                        select: {
+                          id: true,
+                          name: true,
+                          slug: true,
+                          subscriptionTier: true
+                        }
+                      }
+                    },
+                    orderBy: {
+                      createdAt: 'asc'
+                    }
+                  }
+                }
+              })
+
+              if (userWithOrgs) {
+                // Add organizations to session
+                session.user.organizations = userWithOrgs.organizations.map(org => ({
+                  id: org.organization.id,
+                  name: org.organization.name,
+                  slug: org.organization.slug,
+                  role: org.role,
+                  subscriptionTier: org.organization.subscriptionTier
+                }))
+                
+                // Set default organization (first one or the one they last used)
+                session.user.currentOrganization = session.user.organizations[0] || null
+              }
+
+            } catch (dbError) {
+              console.error("❌ Error fetching user organizations in session:", dbError)
+              // Don't fail the session, just continue without organizations
+              session.user.organizations = []
+              session.user.currentOrganization = null
+            }
+          }
+        }
+
+        console.log("✅ Session created/updated for user:", session.user.email)
+        return session
+
+      } catch (error) {
+        console.error("❌ Session callback error:", error)
+        return session
+      }
     }
-  },
-  session: {
-    strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60, // 30 days
-    updateAge: 24 * 60 * 60, // 24 hours
-  },
-  jwt: {
-    maxAge: 30 * 24 * 60 * 60, // 30 days
   },
   events: {
-    async signIn({ user, account, profile, isNewUser }) {
-      console.log(`✅ User signed in: ${user.email} via ${account?.provider}`)
-      
-      // Create default organization for new users
-      if (isNewUser && user.id) {
-        try {
-          const organization = await prisma.organization.create({
-            data: {
-              name: `${user.name}'s Organization` || `${user.email}'s Organization`,
-              slug: generateSlug(user.name || user.email || ''),
-              members: {
-                create: {
-                  userId: user.id,
-                  role: 'owner'
-                }
-              }
-            }
-          })
-          console.log(`✅ Created default organization for new user: ${organization.id}`)
-        } catch (error) {
-          console.error("❌ Error creating default organization:", error)
-        }
-      }
+    async signIn({ user, account, isNewUser }) {
+      console.log(`📝 Sign-in event: ${user.email} via ${account?.provider}`, {
+        isNewUser,
+        userId: user.id,
+        provider: account?.provider
+      })
     },
-    async signOut({ session, token }) {
-      console.log(`✅ User signed out: ${session?.user?.email || 'unknown'}`)
+    async signOut({ token }) {
+      console.log("📝 Sign-out event for user:", token?.email)
+    },
+    async createUser({ user }) {
+      console.log("📝 New user created:", user.email)
+    },
+    async updateUser({ user }) {
+      console.log("📝 User updated:", user.email)
+    },
+    async linkAccount({ user, account }) {
+      console.log(`📝 Account linked: ${user.email} with ${account.provider}`)
+    },
+    async session({ session, token }) {
+      // This event is called whenever a session is checked
+      // Can be used for logging or analytics
     }
   },
-  debug: process.env.NODE_ENV === "development",
-  secret: process.env.NEXTAUTH_SECRET,
-}
-
-/**
- * Refresh access token for OAuth providers
- */
-async function refreshAccessToken(token: any) {
-  try {
-    // Google OAuth token refresh
-    if (token.provider === "google") {
-      const url = "https://oauth2.googleapis.com/token"
-      
-      const response = await fetch(url, {
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({
-          client_id: process.env.GOOGLE_CLIENT_ID!,
-          client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-          grant_type: "refresh_token",
-          refresh_token: token.refreshToken,
-        }),
-        method: "POST",
-      })
-
-      const refreshedTokens = await response.json()
-
-      if (!response.ok) {
-        throw refreshedTokens
+  debug: process.env.NODE_ENV === 'development', // Enable debug in development
+  logger: {
+    error(code, metadata) {
+      console.error(`❌ NextAuth Error [${code}]:`, metadata)
+    },
+    warn(code) {
+      console.warn(`⚠️ NextAuth Warning [${code}]`)
+    },
+    debug(code, metadata) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`🐛 NextAuth Debug [${code}]:`, metadata)
       }
-
-      return {
-        ...token,
-        accessToken: refreshedTokens.access_token,
-        accessTokenExpires: Date.now() + refreshedTokens.expires_in * 1000,
-        refreshToken: refreshedTokens.refresh_token ?? token.refreshToken,
-      }
-    }
-
-    return token
-  } catch (error) {
-    console.error("❌ Error refreshing access token:", error)
-
-    return {
-      ...token,
-      error: "RefreshAccessTokenError",
     }
   }
 }
 
-/**
- * Generate a slug from a string
- */
-function generateSlug(input: string): string {
-  return input
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .substring(0, 50) + '-' + Math.random().toString(36).substring(2, 8)
-}
-
-/**
- * Type declarations for extended session
- */
+// Type extensions for enhanced session
 declare module "next-auth" {
   interface Session {
     user: {
@@ -357,21 +390,19 @@ declare module "next-auth" {
       email: string
       name?: string | null
       image?: string | null
-      organizations?: {
+      organizations?: Array<{
         id: string
         name: string
         slug: string
         role: string
         subscriptionTier: string
-        joinedAt: Date
-      }[]
+      }>
       currentOrganization?: {
         id: string
         name: string
         slug: string
         role: string
         subscriptionTier: string
-        joinedAt: Date
       } | null
     }
   }
@@ -386,9 +417,11 @@ declare module "next-auth" {
 
 declare module "next-auth/jwt" {
   interface JWT {
-    accessToken?: string
-    refreshToken?: string
-    accessTokenExpires?: number
-    error?: string
+    userId: string
+    email: string
+    name?: string | null
+    picture?: string | null
+    provider?: string
+    accountType?: string
   }
 }

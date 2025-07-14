@@ -24,34 +24,34 @@ export default function SignInPage() {
     if (authError) {
       switch (authError) {
         case 'CredentialsSignin':
-          setError('Invalid email or password')
+          setError('Invalid email or password. Please check your credentials and try again.')
           break
         case 'OAuthSignin':
-          setError('Error occurred during Google sign-in')
+          setError('Error occurred during Google sign-in. Please try again.')
           break
         case 'OAuthCallback':
-          setError('Error in OAuth callback')
+          setError('Error in OAuth callback. Please try again.')
           break
         case 'OAuthCreateAccount':
-          setError('Could not create OAuth account')
+          setError('Could not create OAuth account. Please try again.')
           break
         case 'EmailCreateAccount':
-          setError('Could not create email account')
+          setError('Could not create email account. Please try again.')
           break
         case 'Callback':
-          setError('Error in callback')
+          setError('Error in callback. Please try again.')
           break
         case 'OAuthAccountNotLinked':
           setError('Account not linked. Please use the same sign-in method you used before.')
           break
         case 'EmailSignin':
-          setError('Check your email for the sign-in link')
+          setError('Check your email for the sign-in link.')
           break
         case 'SessionRequired':
-          setError('Please sign in to access this page')
+          setError('Please sign in to access this page.')
           break
         default:
-          setError('An error occurred during sign-in')
+          setError('An error occurred during sign-in. Please try again.')
       }
     }
   }, [authError])
@@ -61,13 +61,26 @@ export default function SignInPage() {
       ...prev,
       [e.target.name]: e.target.value
     }))
+    // Clear error when user starts typing
+    if (error) setError('')
   }
 
   const handleEmailSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     
+    // Client-side validation
     if (!formData.email || !formData.password) {
       setError('Please enter both email and password')
+      return
+    }
+
+    if (!formData.email.includes('@')) {
+      setError('Please enter a valid email address')
+      return
+    }
+
+    if (formData.password.length < 6) {
+      setError('Password must be at least 6 characters')
       return
     }
 
@@ -77,25 +90,63 @@ export default function SignInPage() {
       
       console.log('🔄 Attempting credentials sign-in for:', formData.email)
       
+      // First, let's verify the user exists in the database
+      const checkUserResponse = await fetch('/api/auth/check-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: formData.email })
+      })
+
+      if (checkUserResponse.status === 404) {
+        setError('No account found with this email address. Please sign up first.')
+        return
+      }
+
+      // Attempt sign in
       const result = await signIn('credentials', {
-        email: formData.email,
+        email: formData.email.toLowerCase().trim(),
         password: formData.password,
-        redirect: false
+        redirect: false,
+        callbackUrl
       })
       
       console.log('📝 Sign-in result:', result)
       
       if (result?.error) {
         console.error('❌ Sign-in error:', result.error)
-        setError('Invalid email or password')
+        
+        // Handle specific error types
+        switch (result.error) {
+          case 'CredentialsSignin':
+            setError('Invalid email or password. Please check your credentials.')
+            break
+          case 'CallbackRouteError':
+            setError('Authentication failed. Please try again.')
+            break
+          default:
+            setError('Sign-in failed. Please try again.')
+        }
+      } else if (result?.ok && result?.url) {
+        console.log('✅ Sign-in successful, redirecting to:', result.url)
+        
+        // Verify session was created
+        const session = await getSession()
+        if (session) {
+          router.push(result.url)
+          router.refresh()
+        } else {
+          setError('Session creation failed. Please try again.')
+        }
       } else if (result?.ok) {
         console.log('✅ Sign-in successful, redirecting to:', callbackUrl)
         router.push(callbackUrl)
         router.refresh()
+      } else {
+        setError('Unexpected error occurred. Please try again.')
       }
     } catch (err) {
       console.error('❌ Sign-in exception:', err)
-      setError('An error occurred during sign in')
+      setError('Network error. Please check your connection and try again.')
     } finally {
       setIsLoading(false)
     }
@@ -106,59 +157,51 @@ export default function SignInPage() {
       setIsLoading(true)
       setError('')
       
-      console.log('🔄 Attempting Google sign-in')
+      console.log('🔄 Attempting Google sign-in...')
       
       const result = await signIn('google', {
         callbackUrl,
         redirect: false
       })
       
-      console.log('📝 Google sign-in result:', result)
-      
       if (result?.error) {
         console.error('❌ Google sign-in error:', result.error)
-        setError('Failed to sign in with Google')
+        setError('Google sign-in failed. Please try again.')
       } else if (result?.url) {
-        console.log('✅ Google sign-in successful, redirecting to:', result.url)
+        // For Google OAuth, we need to redirect to the authorization URL
         window.location.href = result.url
       }
     } catch (err) {
       console.error('❌ Google sign-in exception:', err)
-      setError('An error occurred during Google sign in')
-    } finally {
+      setError('Google sign-in failed. Please try again.')
       setIsLoading(false)
     }
   }
 
   return (
-
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div>
-          <div className="flex justify-center mb-6">
-            <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center">
-              <svg className="h-8 w-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-            </div>
+          <div className="mx-auto h-12 w-12 flex items-center justify-center bg-blue-600 rounded-lg">
+            <svg className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
           </div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
             Sign in to BizInsights
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
             Or{' '}
-            <Link
-              href="/auth/signup"
-              className="font-medium text-indigo-600 hover:text-indigo-500"
-            >
+            <Link href="/auth/signup" className="font-medium text-blue-600 hover:text-blue-500">
               create a new account
             </Link>
           </p>
         </div>
 
         <div className="mt-8 space-y-6">
+          {/* Error Display */}
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+            <div className="bg-red-50 border border-red-200 rounded-md p-4">
               <div className="flex">
                 <div className="flex-shrink-0">
                   <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
@@ -166,35 +209,32 @@ export default function SignInPage() {
                   </svg>
                 </div>
                 <div className="ml-3">
-                  <p className="text-sm">{error}</p>
+                  <p className="text-sm text-red-800">{error}</p>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Google Sign-in Button */}
+          {/* Google Sign In */}
           <div>
             <button
               onClick={handleGoogleSignIn}
               disabled={isLoading}
-              className="group relative w-full flex justify-center py-3 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="group relative w-full flex justify-center py-3 px-4 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <span className="absolute left-0 inset-y-0 flex items-center pl-3">
-                {isLoading ? (
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-900"></div>
-                ) : (
-                  <svg className="h-5 w-5" viewBox="0 0 24 24">
-                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                  </svg>
-                )}
+                <svg className="h-5 w-5" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                </svg>
               </span>
-              Continue with Google
+              {isLoading ? 'Signing in...' : 'Continue with Google'}
             </button>
           </div>
 
+          {/* Divider */}
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-gray-300" />
@@ -204,22 +244,23 @@ export default function SignInPage() {
             </div>
           </div>
 
-          {/* Email/Password Form */}
-          <form onSubmit={handleEmailSignIn} className="space-y-4">
+          {/* Email Sign In Form */}
+          <form className="space-y-6" onSubmit={handleEmailSignIn}>
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                Email Address
+                Email address
               </label>
               <input
                 id="email"
                 name="email"
                 type="email"
+                autoComplete="email"
                 required
                 value={formData.email}
                 onChange={handleInputChange}
-                className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                placeholder="Enter your email"
                 disabled={isLoading}
+                className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm disabled:opacity-50"
+                placeholder="Enter your email"
               />
             </div>
 
@@ -231,62 +272,58 @@ export default function SignInPage() {
                 id="password"
                 name="password"
                 type="password"
+                autoComplete="current-password"
                 required
                 value={formData.password}
                 onChange={handleInputChange}
-                className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                placeholder="Enter your password"
                 disabled={isLoading}
+                className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm disabled:opacity-50"
+                placeholder="Enter your password"
               />
             </div>
 
             <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <input
-                  id="remember-me"
-                  name="remember-me"
-                  type="checkbox"
-                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                />
-                <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">
-                  Remember me
-                </label>
-              </div>
-
               <div className="text-sm">
-                <Link
-                  href="/auth/forgot-password"
-                  className="font-medium text-indigo-600 hover:text-indigo-500"
-                >
-                  Forgot password?
+                <Link href="/auth/forgot-password" className="font-medium text-blue-600 hover:text-blue-500">
+                  Forgot your password?
                 </Link>
               </div>
             </div>
 
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? (
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-              ) : (
-                'Sign in'
-              )}
-            </button>
+            <div>
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isLoading ? (
+                  <div className="flex items-center">
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Signing in...
+                  </div>
+                ) : (
+                  'Sign in'
+                )}
+              </button>
+            </div>
           </form>
 
-          <div className="text-center">
-            <p className="text-sm text-gray-600">
-              Don't have an account?{' '}
-              <Link
-                href="/auth/signup"
-                className="font-medium text-indigo-600 hover:text-indigo-500"
-              >
-                Sign up here
-              </Link>
-            </p>
-          </div>
+          {/* Debug Info (remove in production) */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="mt-4 p-3 bg-gray-100 rounded-md">
+              <p className="text-xs text-gray-600">
+                Debug: Callback URL = {callbackUrl}
+              </p>
+              {authError && (
+                <p className="text-xs text-red-600">
+                  Auth Error: {authError}
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
