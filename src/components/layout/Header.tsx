@@ -1,55 +1,82 @@
-// src/components/layout/Header.tsx
-'use client'
+// components/layout/Header.tsx
+"use client";
 
-import { useState } from 'react'
-import { useSession, signOut } from 'next-auth/react'
-import { 
-  Menu, 
-  Bell, 
-  Search, 
-  ChevronDown, 
-  Settings, 
-  LogOut, 
+import { useState, useRef, useEffect } from "react";
+import { useSession, signOut } from "next-auth/react";
+import {
+  Bell,
+  Search,
+  Menu,
+  ChevronDown,
+  Settings,
+  LogOut,
   User,
-  HelpCircle
-} from 'lucide-react'
-import { cn } from '@/lib/utils'
+  HelpCircle,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface HeaderProps {
-  onMenuClick: () => void
+  onMenuClick: () => void;
 }
 
 export function Header({ onMenuClick }: HeaderProps) {
-  const { data: session } = useSession()
-  const [userMenuOpen, setUserMenuOpen] = useState(false)
-  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const { data: session } = useSession();
+  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
 
+  const profileDropdownRef = useRef<HTMLDivElement>(null);
+  const notificationsRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        profileDropdownRef.current &&
+        !profileDropdownRef.current.contains(event.target as Node)
+      ) {
+        setProfileDropdownOpen(false);
+      }
+      if (
+        notificationsRef.current &&
+        !notificationsRef.current.contains(event.target as Node)
+      ) {
+        setNotificationsOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  // Sample notifications - in real app, this would come from API
   const notifications = [
     {
-      id: '1',
-      title: 'Revenue increased by 15%',
-      message: 'Your monthly revenue shows strong growth',
-      time: '2h ago',
-      read: false
+      id: 1,
+      title: "Revenue increased by 15%",
+      time: "2 hours ago",
+      unread: true,
     },
     {
-      id: '2',
-      title: 'New integration available',
-      message: 'Connect your Shopify store for better insights',
-      time: '1d ago',
-      read: true
-    }
-  ]
+      id: 2,
+      title: "New integration connected",
+      time: "1 day ago",
+      unread: true,
+    },
+    { id: 3, title: "Weekly report ready", time: "2 days ago", unread: false },
+  ];
 
-  const unreadCount = notifications.filter(n => !n.read).length
+  const unreadCount = notifications.filter((n) => n.unread).length;
 
   return (
-    <header className="bg-white shadow-sm border-b border-slate-200">
+    <header className="sticky top-0 z-40 bg-white shadow-sm border-b border-slate-200">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
-          
-          {/* Left side - Mobile menu button */}
-          <div className="flex items-center">
+          {/* Left section - Mobile menu + Search */}
+          <div className="flex flex-1 items-center">
+            {/* Mobile menu button */}
             <button
               type="button"
               className="rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-500 lg:hidden"
@@ -59,33 +86,45 @@ export function Header({ onMenuClick }: HeaderProps) {
             </button>
 
             {/* Search bar */}
-            <div className="hidden md:block ml-4 lg:ml-0">
+            <div className="ml-4 flex-1 max-w-lg">
               <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                  <Search className="h-5 w-5 text-slate-400" />
+                <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                  <Search
+                    className={cn(
+                      "h-4 w-4 transition-colors duration-200",
+                      searchFocused ? "text-blue-500" : "text-slate-400"
+                    )}
+                  />
                 </div>
                 <input
                   type="text"
-                  placeholder="Search..."
-                  className="block w-64 rounded-md border border-slate-300 bg-white py-2 pl-10 pr-3 text-sm placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  placeholder="Search insights, reports, data..."
+                  className={cn(
+                    "block w-full rounded-lg border pl-10 pr-3 py-2 text-sm transition-all duration-200",
+                    "placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500",
+                    searchFocused
+                      ? "border-blue-300 bg-white shadow-sm"
+                      : "border-slate-300 bg-slate-50 hover:bg-white"
+                  )}
+                  onFocus={() => setSearchFocused(true)}
+                  onBlur={() => setSearchFocused(false)}
                 />
               </div>
             </div>
           </div>
 
-          {/* Right side - Notifications and user menu */}
-          <div className="flex items-center space-x-4">
-            
+          {/* Right section - Notifications + Profile */}
+          <div className="flex items-center space-x-2 sm:space-x-4">
             {/* Notifications */}
-            <div className="relative">
+            <div className="relative" ref={notificationsRef}>
               <button
                 type="button"
-                className="relative rounded-full bg-white p-1 text-slate-400 hover:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                className="relative rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 onClick={() => setNotificationsOpen(!notificationsOpen)}
               >
-                <Bell className="h-6 w-6" />
+                <Bell className="h-5 w-5" />
                 {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-xs font-medium text-white">
+                  <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-medium text-white">
                     {unreadCount}
                   </span>
                 )}
@@ -93,37 +132,51 @@ export function Header({ onMenuClick }: HeaderProps) {
 
               {/* Notifications dropdown */}
               {notificationsOpen && (
-                <div className="absolute right-0 z-50 mt-2 w-80 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
-                  <div className="px-4 py-3 border-b border-slate-100">
-                    <h3 className="text-sm font-medium text-slate-900">Notifications</h3>
+                <div className="absolute right-0 z-50 mt-2 w-80 sm:w-96 rounded-lg bg-white shadow-lg ring-1 ring-black ring-opacity-5">
+                  <div className="p-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-medium text-slate-900">
+                        Notifications
+                      </h3>
+                      <button className="text-xs text-blue-600 hover:text-blue-800">
+                        Mark all read
+                      </button>
+                    </div>
                   </div>
+
                   <div className="max-h-64 overflow-y-auto">
                     {notifications.map((notification) => (
                       <div
                         key={notification.id}
                         className={cn(
-                          "px-4 py-3 hover:bg-slate-50 cursor-pointer",
-                          !notification.read && "bg-blue-50"
+                          "border-t border-slate-100 px-4 py-3 hover:bg-slate-50",
+                          notification.unread && "bg-blue-50"
                         )}
                       >
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
-                            <p className="text-sm font-medium text-slate-900">
+                        <div className="flex items-start space-x-3">
+                          <div
+                            className={cn(
+                              "mt-1 h-2 w-2 rounded-full",
+                              notification.unread
+                                ? "bg-blue-500"
+                                : "bg-slate-300"
+                            )}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm text-slate-900">
                               {notification.title}
                             </p>
-                            <p className="text-sm text-slate-500 mt-1">
-                              {notification.message}
+                            <p className="text-xs text-slate-500">
+                              {notification.time}
                             </p>
                           </div>
-                          <span className="text-xs text-slate-400 ml-2">
-                            {notification.time}
-                          </span>
                         </div>
                       </div>
                     ))}
                   </div>
-                  <div className="px-4 py-2 border-t border-slate-100">
-                    <button className="text-sm text-blue-600 hover:text-blue-500">
+
+                  <div className="border-t border-slate-100 p-2">
+                    <button className="w-full rounded-md px-3 py-2 text-center text-xs text-slate-600 hover:bg-slate-50">
                       View all notifications
                     </button>
                   </div>
@@ -131,69 +184,62 @@ export function Header({ onMenuClick }: HeaderProps) {
               )}
             </div>
 
-            {/* User menu */}
-            <div className="relative">
+            {/* User profile dropdown */}
+            <div className="relative" ref={profileDropdownRef}>
               <button
                 type="button"
-                className="flex items-center space-x-3 rounded-full bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                onClick={() => setUserMenuOpen(!userMenuOpen)}
+                className="flex max-w-xs items-center rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
               >
-                <div className="h-8 w-8 rounded-full bg-slate-200 flex items-center justify-center">
-                  {session?.user?.image ? (
-                    <img
-                      className="h-8 w-8 rounded-full"
-                      src={session.user.image}
-                      alt={session.user.name || ''}
-                    />
-                  ) : (
-                    <User className="h-4 w-4 text-slate-500" />
-                  )}
-                </div>
-                <div className="hidden md:block text-left">
-                  <p className="text-sm font-medium text-slate-700">
-                    {session?.user?.name || 'User'}
+                <img
+                  className="h-8 w-8 rounded-full object-cover"
+                  src={session?.user?.image || "/default-avatar.png"}
+                  alt=""
+                />
+                <div className="ml-3 hidden sm:block text-left">
+                  <p className="text-sm font-medium text-slate-900">
+                    {session?.user?.name || "User"}
                   </p>
                   <p className="text-xs text-slate-500">
                     {session?.user?.email}
                   </p>
                 </div>
-                <ChevronDown className="h-4 w-4 text-slate-400" />
+                <ChevronDown className="ml-2 h-4 w-4 text-slate-400" />
               </button>
 
-              {/* User dropdown menu */}
-              {userMenuOpen && (
-                <div className="absolute right-0 z-50 mt-2 w-48 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+              {/* Profile dropdown menu */}
+              {profileDropdownOpen && (
+                <div className="absolute right-0 z-50 mt-2 w-56 rounded-lg bg-white shadow-lg ring-1 ring-black ring-opacity-5">
                   <div className="px-4 py-3 border-b border-slate-100">
                     <p className="text-sm font-medium text-slate-900">
                       {session?.user?.name}
                     </p>
-                    <p className="text-sm text-slate-500">
+                    <p className="text-xs text-slate-500 truncate">
                       {session?.user?.email}
                     </p>
                   </div>
-                  
-                  <a
-                    href="/dashboard/settings"
-                    className="flex items-center px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
-                  >
-                    <Settings className="h-4 w-4 mr-3" />
-                    Settings
-                  </a>
-                  
-                  <a
-                    href="/help"
-                    className="flex items-center px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
-                  >
-                    <HelpCircle className="h-4 w-4 mr-3" />
-                    Help & Support
-                  </a>
-                  
-                  <div className="border-t border-slate-100">
+
+                  <div className="py-1">
+                    <button className="flex w-full items-center px-4 py-2 text-sm text-slate-700 hover:bg-slate-100">
+                      <User className="mr-3 h-4 w-4" />
+                      Profile
+                    </button>
+                    <button className="flex w-full items-center px-4 py-2 text-sm text-slate-700 hover:bg-slate-100">
+                      <Settings className="mr-3 h-4 w-4" />
+                      Settings
+                    </button>
+                    <button className="flex w-full items-center px-4 py-2 text-sm text-slate-700 hover:bg-slate-100">
+                      <HelpCircle className="mr-3 h-4 w-4" />
+                      Help & Support
+                    </button>
+                  </div>
+
+                  <div className="border-t border-slate-100 py-1">
                     <button
                       onClick={() => signOut()}
-                      className="flex w-full items-center px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
+                      className="flex w-full items-center px-4 py-2 text-sm text-red-700 hover:bg-red-50"
                     >
-                      <LogOut className="h-4 w-4 mr-3" />
+                      <LogOut className="mr-3 h-4 w-4" />
                       Sign out
                     </button>
                   </div>
@@ -204,5 +250,5 @@ export function Header({ onMenuClick }: HeaderProps) {
         </div>
       </div>
     </header>
-  )
+  );
 }

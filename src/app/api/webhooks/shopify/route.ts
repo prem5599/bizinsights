@@ -1,558 +1,448 @@
 // src/app/api/webhooks/shopify/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { 
-  verifyShopifyWebhook, 
-  logWebhookEvent, 
-  updateWebhookEventStatus, 
-  triggerDashboardUpdate,
-  extractMetricFromWebhook,
-  validateWebhookPayload,
-  checkWebhookRateLimit
-} from '@/lib/webhooks'
+import crypto from 'crypto'
 
-export async function POST(req: NextRequest) {
-  try {
-    // Get webhook headers
-    const shopDomain = req.headers.get('x-shopify-shop-domain')
-    const topic = req.headers.get('x-shopify-topic')
-    const hmacHeader = req.headers.get('x-shopify-hmac-sha256')
-    
-    console.log('Received Shopify webhook:', { shopDomain, topic, timestamp: new Date().toISOString() })
+// Shopify webhook data interfaces
+interface ShopifyOrder {
+  id: number
+  name: string
+  email: string
+  created_at: string
+  updated_at: string
+  cancelled_at?: string
+  financial_status: string
+  fulfillment_status: string
+  total_price: string
+  subtotal_price: string
+  total_tax: string
+  currency: string
+  customer?: {
+    id: number
+    email: string
+    created_at: string
+    first_name: string
+    last_name: string
+    orders_count: number
+    total_spent: string
+  }
+  line_items: Array<{
+    id: number
+    product_id: number
+    variant_id: number
+    title: string
+    quantity: number
+    price: string
+    total_discount: string
+  }>
+  shipping_address?: {
+    country: string
+    province: string
+    city: string
+  }
+  billing_address?: {
+    country: string
+    province: string
+    city: string
+  }
+}
 
-    if (!shopDomain || !topic || !hmacHeader) {
-      console.error('Missing required webhook headers:', { shopDomain, topic, hmacHeader })
-      return NextResponse.json(
-        { error: 'Missing required headers' },
-        { status: 400 }
-      )
+interface ShopifyCustomer {
+  id: number
+  email: string
+  created_at: string
+  updated_at: string
+  first_name: string
+  last_name: string
+  orders_count: number
+  total_spent: string
+  currency: string
+  phone?: string
+  accepts_marketing: boolean
+  marketing_opt_in_level?: string
+  addresses: Array<{
+    country: string
+    province: string
+    city: string
+  }>
+}
+
+// Verify Shopify webhook authenticity
+function verifyShopifyWebhook(body: string, signature: string, secret: string): boolean {
+  if (!secret) {
+    console.warn('No webhook secret configured')
+    return false
+  }
+
+  const hmac = crypto.createHmac('sha256', secret)
+  hmac.update(body, 'utf8')
+  const calculatedSignature = hmac.digest('base64')
+  
+  return crypto.timingSafeEqual(
+    Buffer.from(calculatedSignature),
+    Buffer.from(signature)
+  )
+}
+
+// Find integration by shop domain
+async function findIntegrationByShop(shopDomain: string) {
+  return await prisma.integration.findFirst({
+    where: {
+      platform: 'shopify',
+      platformAccountId: shopDomain,
+      status: 'active'
     }
+  })
+}
 
-    // Get raw body for signature verification
-    const rawBody = await req.text()
-    
-    // Get organization ID from query params (set during webhook creation)
-    const { searchParams } = new URL(req.url)
-    const organizationId = searchParams.get('org')
-
-    if (!organizationId) {
-      console.error('No organization ID in webhook URL')
-      return NextResponse.json(
-        { error: 'Organization ID required' },
-        { status: 400 }
-      )
+// Create webhook event record
+async function createWebhookEvent(
+  integrationId: string,
+  topic: string,
+  externalId: string,
+  status: 'received' | 'processed' | 'failed' | 'signature_verification_failed' | 'invalid_json',
+  error?: string,
+  metadata?: any
+) {
+  return await prisma.webhookEvent.create({
+    data: {
+      integrationId,
+      topic,
+      externalId,
+      status,
+      error,
+      metadata: metadata || {},
+      receivedAt: new Date(),
+      processedAt: status === 'processed' ? new Date() : undefined
     }
+  })
+}
 
-    // Find the integration
-    const integration = await prisma.integration.findFirst({
-      where: {
-        organizationId,
-        platform: 'shopify',
-        status: 'active'
+// Process order webhook (create, update, paid, cancelled)
+async function processOrderWebhook(
+  integration: any,
+  topic: string,
+  order: ShopifyOrder
+): Promise<void> {
+  const dateRecorded = new Date(order.created_at)
+  const orderValue = parseFloat(order.total_price)
+  const isNewOrder = topic === 'orders/create'
+  const isPaid = order.financial_status === 'paid'
+  const isCancelled = !!order.cancelled_at
+
+  // Create order revenue data point
+  if (isNewOrder && !isCancelled) {
+    await prisma.dataPoint.create({
+      data: {
+        integrationId: integration.id,
+        metricType: 'orders',
+        value: 1,
+        dateRecorded,
+        metadata: {
+          orderId: order.id,
+          orderName: order.name,
+          currency: order.currency,
+          fulfillmentStatus: order.fulfillment_status
+        }
       }
     })
 
-    if (!integration) {
-      console.error(`No active Shopify integration found for ${shopDomain} in org ${organizationId}`)
-      return NextResponse.json(
-        { error: 'Integration not found' },
-        { status: 404 }
-      )
+    // Record order value separately
+    await prisma.dataPoint.create({
+      data: {
+        integrationId: integration.id,
+        metricType: 'order_value',
+        value: orderValue,
+        dateRecorded,
+        metadata: {
+          orderId: order.id,
+          orderName: order.name,
+          currency: order.currency
+        }
+      }
+    })
+  }
+
+  // Record revenue when order is paid
+  if (isPaid && (topic === 'orders/paid' || (isNewOrder && isPaid))) {
+    await prisma.dataPoint.create({
+      data: {
+        integrationId: integration.id,
+        metricType: 'revenue',
+        value: orderValue,
+        dateRecorded: new Date(), // Use current time for when payment was received
+        metadata: {
+          orderId: order.id,
+          orderName: order.name,
+          originalOrderDate: order.created_at,
+          currency: order.currency,
+          subtotal: order.subtotal_price,
+          tax: order.total_tax
+        }
+      }
+    })
+  }
+
+  // Handle cancellations
+  if (isCancelled && topic === 'orders/cancelled') {
+    await prisma.dataPoint.create({
+      data: {
+        integrationId: integration.id,
+        metricType: 'orders_cancelled',
+        value: 1,
+        dateRecorded: new Date(order.cancelled_at!),
+        metadata: {
+          orderId: order.id,
+          orderName: order.name,
+          originalOrderDate: order.created_at,
+          cancelledOrderValue: orderValue,
+          currency: order.currency
+        }
+      }
+    })
+  }
+
+  // Process customer data if available
+  if (order.customer && isNewOrder) {
+    await processCustomerData(integration, order.customer, dateRecorded)
+  }
+
+  console.log(`Processed order webhook: ${topic} for order ${order.name} (${order.id})`)
+}
+
+// Process customer webhook (create, update)
+async function processCustomerWebhook(
+  integration: any,
+  topic: string,
+  customer: ShopifyCustomer
+): Promise<void> {
+  const dateRecorded = new Date(customer.created_at)
+  const isNewCustomer = topic === 'customers/create'
+
+  await processCustomerData(integration, customer, dateRecorded, isNewCustomer)
+
+  console.log(`Processed customer webhook: ${topic} for customer ${customer.email} (${customer.id})`)
+}
+
+// Helper function to process customer data
+async function processCustomerData(
+  integration: any,
+  customer: any,
+  dateRecorded: Date,
+  isNewCustomer: boolean = false
+): Promise<void> {
+  // Record new customer
+  if (isNewCustomer) {
+    await prisma.dataPoint.create({
+      data: {
+        integrationId: integration.id,
+        metricType: 'customers',
+        value: 1,
+        dateRecorded,
+        metadata: {
+          customerId: customer.id,
+          email: customer.email,
+          firstName: customer.first_name,
+          lastName: customer.last_name,
+          acceptsMarketing: customer.accepts_marketing
+        }
+      }
+    })
+  }
+
+  // Record customer lifetime value
+  const totalSpent = parseFloat(customer.total_spent || '0')
+  if (totalSpent > 0) {
+    await prisma.dataPoint.create({
+      data: {
+        integrationId: integration.id,
+        metricType: 'customer_lifetime_value',
+        value: totalSpent,
+        dateRecorded: new Date(), // Use current time for LTV updates
+        metadata: {
+          customerId: customer.id,
+          email: customer.email,
+          ordersCount: customer.orders_count,
+          currency: customer.currency || 'USD'
+        }
+      }
+    })
+  }
+}
+
+// Process app uninstalled webhook
+async function processAppUninstalled(integration: any): Promise<void> {
+  await prisma.integration.update({
+    where: {
+      id: integration.id
+    },
+    data: {
+      status: 'inactive',
+      metadata: {
+        ...integration.metadata,
+        uninstalledAt: new Date().toISOString()
+      }
+    }
+  })
+
+  console.log(`App uninstalled for integration ${integration.id}`)
+}
+
+export async function POST(req: NextRequest) {
+  let body: string
+  let shopDomain: string | null = null
+  let topic: string | null = null
+
+  try {
+    // Get raw body for signature verification
+    body = await req.text()
+    
+    // Get headers
+    const signature = req.headers.get('x-shopify-hmac-sha256')
+    shopDomain = req.headers.get('x-shopify-shop-domain')
+    topic = req.headers.get('x-shopify-topic')
+
+    if (!signature || !shopDomain || !topic) {
+      console.warn('Missing required webhook headers:', { signature: !!signature, shopDomain, topic })
+      return NextResponse.json({ error: 'Missing required headers' }, { status: 400 })
     }
 
-    // Check rate limiting
-    if (!checkWebhookRateLimit(integration.id)) {
-      console.warn(`Rate limit exceeded for integration ${integration.id}`)
-      return NextResponse.json(
-        { error: 'Rate limit exceeded' },
-        { status: 429 }
-      )
+    // Find the integration
+    const integration = await findIntegrationByShop(shopDomain)
+    if (!integration) {
+      console.warn(`No active integration found for shop: ${shopDomain}`)
+      return NextResponse.json({ error: 'Integration not found' }, { status: 404 })
     }
 
     // Verify webhook signature
     const webhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET
-    if (!webhookSecret) {
-      console.error('SHOPIFY_WEBHOOK_SECRET not configured')
-      return NextResponse.json(
-        { error: 'Webhook secret not configured' },
-        { status: 500 }
-      )
-    }
-
-    if (!verifyShopifyWebhook(rawBody, hmacHeader, webhookSecret)) {
-      console.error('Invalid webhook signature from:', shopDomain)
-      await logWebhookEvent(integration.id, topic, 'signature_verification_failed', null)
-      return NextResponse.json(
-        { error: 'Invalid signature' },
-        { status: 401 }
-      )
-    }
-
-    // Parse webhook data
-    let webhookData
-    try {
-      webhookData = JSON.parse(rawBody)
-    } catch (error) {
-      console.error('Invalid JSON in webhook body:', error)
-      await logWebhookEvent(integration.id, topic, 'invalid_json', null)
-      return NextResponse.json(
-        { error: 'Invalid JSON' },
-        { status: 400 }
-      )
-    }
-
-    // Validate webhook payload
-    const validation = validateWebhookPayload('shopify', topic, webhookData)
-    if (!validation.isValid) {
-      console.error('Invalid webhook payload:', validation.errors)
-      await logWebhookEvent(integration.id, topic, 'invalid_payload', null)
-      return NextResponse.json(
-        { error: 'Invalid payload', details: validation.errors },
-        { status: 400 }
-      )
-    }
-
-    // Log webhook event
-    const externalId = webhookData.id?.toString() || 'unknown'
-    await logWebhookEvent(integration.id, topic, 'received', externalId)
-
-    // Process webhook based on topic
-    const result = await processShopifyWebhook(integration, topic, webhookData)
-    
-    if (result.success) {
-      console.log(`Successfully processed webhook: ${topic} for integration ${integration.id}`)
+    if (!webhookSecret || !verifyShopifyWebhook(body, signature, webhookSecret)) {
+      console.warn(`Invalid webhook signature for shop: ${shopDomain}`)
       
-      // Update webhook event status
-      await updateWebhookEventStatus(integration.id, topic, externalId, 'processed')
-      
-      // Trigger real-time dashboard updates
-      await triggerDashboardUpdate(organizationId, topic, webhookData)
-      
-      return NextResponse.json({ 
-        success: true, 
-        message: 'Webhook processed successfully',
+      // Record the failed verification
+      await createWebhookEvent(
+        integration.id,
         topic,
-        integrationId: integration.id,
-        processed: result.processed
+        'unknown',
+        'signature_verification_failed',
+        'Invalid webhook signature'
+      )
+      
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    }
+
+    // Parse JSON body
+    let webhookData: any
+    try {
+      webhookData = JSON.parse(body)
+    } catch (parseError) {
+      console.error('Failed to parse webhook JSON:', parseError)
+      
+      await createWebhookEvent(
+        integration.id,
+        topic,
+        'unknown',
+        'invalid_json',
+        'Failed to parse JSON body'
+      )
+      
+      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+    }
+
+    // Extract external ID for tracking
+    const externalId = webhookData.id?.toString() || 'unknown'
+
+    try {
+      // Process webhook based on topic
+      switch (topic) {
+        case 'orders/create':
+        case 'orders/updated':
+        case 'orders/paid':
+        case 'orders/cancelled':
+          await processOrderWebhook(integration, topic, webhookData as ShopifyOrder)
+          break
+
+        case 'customers/create':
+        case 'customers/update':
+          await processCustomerWebhook(integration, topic, webhookData as ShopifyCustomer)
+          break
+
+        case 'app/uninstalled':
+          await processAppUninstalled(integration)
+          break
+
+        default:
+          console.log(`Unhandled webhook topic: ${topic}`)
+          // Still record it for monitoring
+          await createWebhookEvent(
+            integration.id,
+            topic,
+            externalId,
+            'received',
+            undefined,
+            { note: 'Unhandled topic, webhook received but not processed' }
+          )
+          break
+      }
+
+      // Record successful processing
+      await createWebhookEvent(
+        integration.id,
+        topic,
+        externalId,
+        'processed',
+        undefined,
+        { processedFields: Object.keys(webhookData) }
+      )
+
+      // Update integration last sync time
+      await prisma.integration.update({
+        where: {
+          id: integration.id
+        },
+        data: {
+          lastSyncAt: new Date()
+        }
       })
-    } else {
-      console.error(`Failed to process webhook: ${topic}`, result.error)
+
+      return NextResponse.json({ success: true, topic, externalId })
+
+    } catch (processingError) {
+      console.error(`Error processing webhook ${topic}:`, processingError)
       
-      // Update webhook event status
-      await updateWebhookEventStatus(integration.id, topic, externalId, 'failed', result.error)
-      
+      // Record the processing error
+      await createWebhookEvent(
+        integration.id,
+        topic,
+        externalId,
+        'failed',
+        processingError instanceof Error ? processingError.message : 'Unknown processing error',
+        { webhookData: Object.keys(webhookData) }
+      )
+
       return NextResponse.json(
-        { error: result.error || 'Webhook processing failed' },
+        { error: 'Processing failed', topic, externalId },
         { status: 500 }
       )
     }
 
   } catch (error) {
     console.error('Webhook handler error:', error)
-    
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Webhook handler failed' },
       { status: 500 }
     )
   }
 }
 
-/**
- * Process different Shopify webhook events
- */
-async function processShopifyWebhook(
-  integration: any,
-  topic: string,
-  webhookData: any
-): Promise<{ success: boolean; error?: string; processed?: number }> {
-  try {
-    switch (topic) {
-      case 'orders/create':
-        return await handleOrderCreate(integration, webhookData)
-      
-      case 'orders/updated':
-        return await handleOrderUpdate(integration, webhookData)
-      
-      case 'orders/paid':
-        return await handleOrderPaid(integration, webhookData)
-      
-      case 'orders/cancelled':
-        return await handleOrderCancelled(integration, webhookData)
-      
-      case 'orders/fulfilled':
-        return await handleOrderFulfilled(integration, webhookData)
-      
-      case 'orders/refunded':
-        return await handleOrderRefunded(integration, webhookData)
-      
-      case 'app/uninstalled':
-        return await handleAppUninstalled(integration, webhookData)
-      
-      case 'shop/update':
-        return await handleShopUpdate(integration, webhookData)
-      
-      case 'customers/create':
-        return await handleCustomerCreate(integration, webhookData)
-      
-      default:
-        console.log(`Unhandled webhook topic: ${topic}`)
-        return {
-          success: true,
-          processed: 0
-        }
-    }
-
-  } catch (error) {
-    console.error(`Error processing webhook ${topic}:`, error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error'
-    }
-  }
-}
-
-/**
- * Handle order creation webhook
- */
-async function handleOrderCreate(integration: any, orderData: any) {
-  try {
-    const metrics = extractMetricFromWebhook('shopify', 'orders/create', orderData)
-    
-    // Store metrics as data points
-    for (const metric of metrics) {
-      await prisma.dataPoint.create({
-        data: {
-          integrationId: integration.id,
-          metricType: metric.metricType,
-          value: metric.value,
-          metadata: metric.metadata,
-          dateRecorded: metric.dateRecorded
-        }
-      })
-    }
-
-    return {
-      success: true,
-      processed: metrics.length
-    }
-  } catch (error) {
-    throw error
-  }
-}
-
-/**
- * Handle order payment webhook
- */
-async function handleOrderPaid(integration: any, orderData: any) {
-  try {
-    const metrics = extractMetricFromWebhook('shopify', 'orders/paid', orderData)
-    
-    // Store metrics as data points
-    for (const metric of metrics) {
-      await prisma.dataPoint.create({
-        data: {
-          integrationId: integration.id,
-          metricType: metric.metricType,
-          value: metric.value,
-          metadata: metric.metadata,
-          dateRecorded: metric.dateRecorded
-        }
-      })
-    }
-
-    return {
-      success: true,
-      processed: metrics.length
-    }
-  } catch (error) {
-    throw error
-  }
-}
-
-/**
- * Handle order update webhook
- */
-async function handleOrderUpdate(integration: any, orderData: any) {
-  try {
-    // Update existing order data point
-    await prisma.dataPoint.create({
-      data: {
-        integrationId: integration.id,
-        metricType: 'order_updated',
-        value: 1,
-        metadata: {
-          orderId: orderData.id,
-          orderNumber: orderData.order_number,
-          status: orderData.financial_status,
-          updatedAt: orderData.updated_at
-        },
-        dateRecorded: new Date(orderData.updated_at || Date.now())
-      }
-    })
-
-    return {
-      success: true,
-      processed: 1
-    }
-  } catch (error) {
-    throw error
-  }
-}
-
-/**
- * Handle order cancellation webhook
- */
-async function handleOrderCancelled(integration: any, orderData: any) {
-  try {
-    await prisma.dataPoint.create({
-      data: {
-        integrationId: integration.id,
-        metricType: 'order_cancelled',
-        value: parseFloat(orderData.total_price || '0'),
-        metadata: {
-          orderId: orderData.id,
-          orderNumber: orderData.order_number,
-          cancelReason: orderData.cancel_reason,
-          cancelledAt: orderData.cancelled_at
-        },
-        dateRecorded: new Date(orderData.cancelled_at || Date.now())
-      }
-    })
-
-    return {
-      success: true,
-      processed: 1
-    }
-  } catch (error) {
-    throw error
-  }
-}
-
-/**
- * Handle order fulfillment webhook
- */
-async function handleOrderFulfilled(integration: any, orderData: any) {
-  try {
-    await prisma.dataPoint.create({
-      data: {
-        integrationId: integration.id,
-        metricType: 'order_fulfilled',
-        value: 1,
-        metadata: {
-          orderId: orderData.id,
-          orderNumber: orderData.order_number,
-          fulfillmentStatus: orderData.fulfillment_status
-        },
-        dateRecorded: new Date()
-      }
-    })
-
-    return {
-      success: true,
-      processed: 1
-    }
-  } catch (error) {
-    throw error
-  }
-}
-
-/**
- * Handle order refund webhook
- */
-async function handleOrderRefunded(integration: any, refundData: any) {
-  try {
-    await prisma.dataPoint.create({
-      data: {
-        integrationId: integration.id,
-        metricType: 'order_refunded',
-        value: parseFloat(refundData.refund?.amount || '0'),
-        metadata: {
-          orderId: refundData.order_id,
-          refundId: refundData.id,
-          refundAmount: refundData.refund?.amount,
-          reason: refundData.note
-        },
-        dateRecorded: new Date(refundData.created_at || Date.now())
-      }
-    })
-
-    return {
-      success: true,
-      processed: 1
-    }
-  } catch (error) {
-    throw error
-  }
-}
-
-/**
- * Handle customer creation webhook
- */
-async function handleCustomerCreate(integration: any, customerData: any) {
-  try {
-    await prisma.dataPoint.create({
-      data: {
-        integrationId: integration.id,
-        metricType: 'customers',
-        value: 1,
-        metadata: {
-          customerId: customerData.id,
-          email: customerData.email,
-          firstName: customerData.first_name,
-          lastName: customerData.last_name,
-          acceptsMarketing: customerData.accepts_marketing
-        },
-        dateRecorded: new Date(customerData.created_at || Date.now())
-      }
-    })
-
-    return {
-      success: true,
-      processed: 1
-    }
-  } catch (error) {
-    throw error
-  }
-}
-
-/**
- * Handle shop update webhook
- */
-async function handleShopUpdate(integration: any, shopData: any) {
-  try {
-    // Update integration metadata with shop info
-    await prisma.integration.update({
-      where: { id: integration.id },
-      data: {
-        metadata: {
-          ...(integration.metadata as any || {}),
-          shopInfo: {
-            name: shopData.name,
-            email: shopData.email,
-            domain: shopData.domain,
-            currency: shopData.currency,
-            timezone: shopData.timezone,
-            updatedAt: new Date().toISOString()
-          }
-        }
-      }
-    })
-
-    return {
-      success: true,
-      processed: 1
-    }
-  } catch (error) {
-    throw error
-  }
-}
-
-/**
- * Handle app uninstallation webhook
- */
-async function handleAppUninstalled(integration: any, webhookData: any) {
-  try {
-    // Deactivate the integration
-    await prisma.integration.update({
-      where: { id: integration.id },
-      data: {
-        status: 'inactive',
-        accessToken: null,
-        refreshToken: null,
-        metadata: {
-          ...(integration.metadata as any || {}),
-          uninstalledAt: new Date().toISOString(),
-          uninstallReason: 'app_uninstalled'
-        }
-      }
-    })
-
-    // Notify organization admins
-    await notifyIntegrationDisconnected(integration.organizationId, 'shopify', 'app_uninstalled')
-
-    return {
-      success: true,
-      processed: 1
-    }
-  } catch (error) {
-    throw error
-  }
-}
-
-/**
- * Notify organization admins about integration disconnection
- */
-async function notifyIntegrationDisconnected(
-  organizationId: string,
-  platform: string,
-  reason: string
-) {
-  try {
-    // Get organization admins
-    const admins = await prisma.organizationMember.findMany({
-      where: {
-        organizationId,
-        role: { in: ['owner', 'admin'] }
-      },
-      include: {
-        user: true,
-        organization: true
-      }
-    })
-
-    // Log the disconnection
-    console.log(`${platform} integration disconnected for org ${organizationId}:`, {
-      reason,
-      adminCount: admins.length,
-      timestamp: new Date().toISOString()
-    })
-
-    // Create notification data point
-    await prisma.dataPoint.create({
-      data: {
-        integrationId: 'system',
-        metricType: 'integration_disconnected',
-        value: 1,
-        metadata: {
-          organizationId,
-          platform,
-          reason,
-          adminCount: admins.length,
-          notifiedAt: new Date().toISOString()
-        },
-        dateRecorded: new Date()
-      }
-    })
-
-    // In a real implementation, send email notifications to admins
-    for (const admin of admins) {
-      console.log(`Would notify ${admin.user.email} about ${platform} disconnection (${reason})`)
-    }
-
-  } catch (error) {
-    console.error('Failed to notify admins:', error)
-  }
-}
-
-// Handle webhook verification for GET requests (Shopify webhook verification)
+// GET endpoint for webhook verification (Shopify sometimes sends GET requests)
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
-  const challenge = searchParams.get('challenge')
+  const challenge = searchParams.get('hub.challenge')
   
-  // Shopify webhook verification
   if (challenge) {
-    console.log('Shopify webhook verification challenge received')
-    return new Response(challenge, {
-      status: 200,
-      headers: { 'Content-Type': 'text/plain' }
-    })
+    return new NextResponse(challenge, { status: 200 })
   }
-
-  // Webhook endpoint health check
-  return NextResponse.json({
-    message: 'Shopify webhook endpoint',
-    status: 'active',
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
-  })
+  
+  return NextResponse.json({ message: 'Shopify webhook endpoint' })
 }

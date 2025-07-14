@@ -3,405 +3,269 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { z } from 'zod'
+import crypto from 'crypto'
+
+// Validation schema for connection request
+const connectRequestSchema = z.object({
+  organizationId: z.string().min(1),
+  shopName: z.string().min(1).max(100).regex(/^[a-zA-Z0-9\-]+$/, 'Invalid shop name format'),
+  returnUrl: z.string().url().optional()
+})
+
+// Required Shopify scopes - using scopes from your project
+const REQUIRED_SCOPES = [
+  'read_products',
+  'read_orders',
+  'read_customers',
+  'read_analytics',
+  'read_reports',
+  'read_inventory',
+  'read_financial_data'
+]
+
+// Generate a secure state parameter for OAuth
+function generateState(): string {
+  return crypto.randomBytes(32).toString('hex')
+}
+
+// Build Shopify OAuth URL
+function buildShopifyAuthUrl(shopName: string, clientId: string, redirectUri: string, state: string, scopes: string[]): string {
+  const params = new URLSearchParams({
+    client_id: clientId,
+    scope: scopes.join(','),
+    redirect_uri: redirectUri,
+    state: state,
+    'grant_options[]': 'per-user'
+  })
+
+  return `https://${shopName}.myshopify.com/admin/oauth/authorize?${params.toString()}`
+}
 
 export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
+    
     if (!session?.user?.id) {
-      console.log('❌ Unauthorized: No session')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const body = await req.json()
-    const { shopDomain, accessToken, organizationId } = body
 
-    console.log('🔗 Shopify Real Integration request:', { shopDomain, organizationId, userId: session.user.id })
-
-    if (!shopDomain || !accessToken || !organizationId) {
-      console.log('❌ Missing required fields')
+    // Validate request body
+    const validation = connectRequestSchema.safeParse(body)
+    if (!validation.success) {
       return NextResponse.json(
-        { error: 'Shop domain, access token, and organization ID are required' },
+        { error: 'Invalid request data', details: validation.error.errors },
         { status: 400 }
       )
     }
 
+    const { organizationId, shopName, returnUrl } = validation.data
+
     // Verify user has admin access to this organization
-    const userMembership = await prisma.organizationMember.findFirst({
+    const organizationMember = await prisma.organizationMember.findFirst({
       where: {
-        organizationId: organizationId,
+        organizationId,
         userId: session.user.id,
-        role: { in: ['owner', 'admin'] }
+        role: {
+          in: ['owner', 'admin'] // Only admins can connect integrations
+        }
       },
       include: {
         organization: true
       }
     })
 
-    if (!userMembership) {
-      console.log('❌ Access denied: User not admin of organization')
-      return NextResponse.json(
-        { error: 'Admin access required for this organization' },
-        { status: 403 }
-      )
+    if (!organizationMember) {
+      return NextResponse.json({ error: 'Access denied - admin role required' }, { status: 403 })
     }
 
-    // Clean and validate shop domain
-    console.log('🧹 Cleaning shop domain...')
-    const cleanShopDomain = shopDomain.trim().toLowerCase()
-      .replace(/^https?:\/\//, '')
-      .replace(/\.myshopify\.com\/?$/, '')
-      .replace(/\/$/, '')
-
-    const domainPattern = /^[a-zA-Z0-9][a-zA-Z0-9\-_]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$/
-    if (!domainPattern.test(cleanShopDomain)) {
-      console.log('❌ Invalid domain format:', cleanShopDomain)
-      return NextResponse.json(
-        {
-          error: 'Invalid shop domain format. Please use formats like: mystore.myshopify.com, mystore.com, or just mystore',
-          processed: cleanShopDomain,
-          original: shopDomain
-        },
-        { status: 400 }
-      )
-    }
-
-    // Validate access token format
-    if (!accessToken.startsWith('shpat_')) {
-      return NextResponse.json(
-        { error: 'Invalid access token format. Shopify access tokens must start with "shpat_"' },
-        { status: 400 }
-      )
-    }
-
-    console.log('✅ Domain and token validation passed')
-
-    // Test the Shopify connection first
-    console.log('🧪 Testing Shopify connection...')
-    try {
-      await testShopifyConnection(cleanShopDomain, accessToken)
-      console.log('✅ Shopify connection test successful')
-    } catch (testError) {
-      console.error('❌ Shopify connection test failed:', testError)
-      return NextResponse.json(
-        { 
-          error: 'Failed to connect to Shopify store. Please verify your shop domain and access token.',
-          details: testError instanceof Error ? testError.message : 'Connection test failed'
-        },
-        { status: 400 }
-      )
-    }
-
-    // Check if integration already exists
-    console.log('🔍 Checking for existing integration...')
-    const existingIntegration = await prisma.integration.findFirst({
+    // Check if Shopify integration already exists for this organization
+    const existingIntegration = await prisma.integration.findUnique({
       where: {
-        organizationId: organizationId,
-        platform: 'shopify',
-        platformAccountId: cleanShopDomain
-      }
-    })
-
-    if (existingIntegration) {
-      console.log('❌ Integration already exists:', existingIntegration.id)
-      return NextResponse.json(
-        { error: 'Shopify integration already exists for this store' },
-        { status: 409 }
-      )
-    }
-
-    console.log('✅ No existing integration found')
-    
-    // Create the integration
-    console.log('💾 Creating integration...')
-    const integration = await prisma.integration.create({
-      data: {
-        organizationId: organizationId,
-        platform: 'shopify',
-        platformAccountId: cleanShopDomain,
-        accessToken: accessToken,
-        status: 'active',
-        lastSyncAt: null,
-        metadata: {
-          shopDomain: cleanShopDomain,
-          integrationMethod: 'private_app'
+        organizationId_platform: {
+          organizationId,
+          platform: 'shopify'
         }
       }
     })
 
-    console.log('✅ Integration created:', integration.id)
-
-    // Start initial data sync from real Shopify API
-    console.log('🔄 Starting real data sync...')
-    try {
-      await syncRealShopifyData(integration.id, cleanShopDomain, accessToken)
-      console.log('✅ Real data sync completed')
-      
-      // Update last sync timestamp
-      await prisma.integration.update({
-        where: { id: integration.id },
-        data: { lastSyncAt: new Date() }
-      })
-      
-    } catch (syncError) {
-      console.error('❌ Error syncing real data:', syncError)
-      // Delete the integration if data sync fails
-      await prisma.integration.delete({ where: { id: integration.id } })
+    if (existingIntegration && existingIntegration.status === 'active') {
       return NextResponse.json(
-        { 
-          error: 'Failed to sync data from Shopify. Please check your access token permissions.',
-          details: syncError instanceof Error ? syncError.message : 'Data sync failed'
-        },
-        { status: 400 }
+        { error: 'Shopify integration already exists for this organization' },
+        { status: 409 }
       )
     }
 
-    console.log('Shopify integration created successfully:', {
-      integrationId: integration.id,
-      organizationId: organizationId,
-      shopDomain: cleanShopDomain
+    // Get environment variables
+    const clientId = process.env.SHOPIFY_CLIENT_ID
+    const clientSecret = process.env.SHOPIFY_CLIENT_SECRET
+
+    if (!clientId || !clientSecret) {
+      console.error('Missing Shopify OAuth credentials')
+      return NextResponse.json(
+        { error: 'Integration not configured properly' },
+        { status: 500 }
+      )
+    }
+
+    // Generate state parameter for security
+    const state = generateState()
+
+    // Store the connection attempt in database for verification
+    const connectionAttempt = await prisma.integration.upsert({
+      where: {
+        organizationId_platform: {
+          organizationId,
+          platform: 'shopify'
+        }
+      },
+      create: {
+        organizationId,
+        platform: 'shopify',
+        platformAccountId: `${shopName}.myshopify.com`,
+        status: 'pending',
+        metadata: {
+          shopName,
+          state,
+          connectionInitiatedBy: session.user.id,
+          connectionInitiatedAt: new Date().toISOString(),
+          returnUrl: returnUrl || `${process.env.NEXTAUTH_URL}/${organizationMember.organization.slug}/integrations`,
+          scopes: REQUIRED_SCOPES
+        }
+      },
+      update: {
+        platformAccountId: `${shopName}.myshopify.com`,
+        status: 'pending',
+        metadata: {
+          shopName,
+          state,
+          connectionInitiatedBy: session.user.id,
+          connectionInitiatedAt: new Date().toISOString(),
+          returnUrl: returnUrl || `${process.env.NEXTAUTH_URL}/${organizationMember.organization.slug}/integrations`,
+          scopes: REQUIRED_SCOPES,
+          // Preserve any existing metadata
+          ...(existingIntegration?.metadata as any || {})
+        },
+        updatedAt: new Date()
+      }
     })
+
+    // Build the redirect URI
+    const redirectUri = `${process.env.NEXTAUTH_URL}/api/integrations/shopify/callback`
+
+    // Build Shopify OAuth URL
+    const authUrl = buildShopifyAuthUrl(
+      shopName,
+      clientId,
+      redirectUri,
+      state,
+      REQUIRED_SCOPES
+    )
 
     return NextResponse.json({
       success: true,
+      authUrl,
       integration: {
-        id: integration.id,
-        platform: 'shopify',
-        platformAccountId: cleanShopDomain,
-        status: 'active',
-        lastSyncAt: integration.lastSyncAt,
-        createdAt: integration.createdAt
+        id: connectionAttempt.id,
+        platform: connectionAttempt.platform,
+        shopName,
+        status: connectionAttempt.status,
+        scopes: REQUIRED_SCOPES
       },
-      organization: {
-        id: userMembership.organization.id,
-        name: userMembership.organization.name
-      },
-      message: 'Shopify store connected successfully with real data'
+      message: 'Redirecting to Shopify for authorization...'
     })
 
   } catch (error) {
-    console.error('Shopify Real Integration error:', error)
+    console.error('Shopify connect API error:', error)
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { 
+        error: 'Internal server error',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     )
   }
 }
 
-/**
- * Test Shopify connection with provided credentials
- */
-async function testShopifyConnection(shopDomain: string, accessToken: string) {
-  const testUrl = `https://${shopDomain}.myshopify.com/admin/api/2023-10/shop.json`
-  
-  const response = await fetch(testUrl, {
-    headers: {
-      'X-Shopify-Access-Token': accessToken,
-      'Content-Type': 'application/json'
-    }
-  })
-
-  if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(`Shopify API responded with ${response.status}: ${response.statusText}. ${errorText}`)
-  }
-
-  const shopData = await response.json()
-  
-  if (!shopData.shop) {
-    throw new Error('Invalid response from Shopify API')
-  }
-
-  console.log('✅ Connected to Shopify store:', shopData.shop.name)
-  return shopData.shop
-}
-
-/**
- * Sync real data from Shopify API
- */
-async function syncRealShopifyData(integrationId: string, shopDomain: string, accessToken: string) {
-  console.log('📊 Fetching real Shopify data...')
-  
-  // Calculate date range for initial sync (last 30 days)
-  const endDate = new Date()
-  const startDate = new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000)
-  const startDateISO = startDate.toISOString()
-
+// GET endpoint to check connection status
+export async function GET(req: NextRequest) {
   try {
-    // Fetch real orders from Shopify
-    const ordersResponse = await fetch(
-      `https://${shopDomain}.myshopify.com/admin/api/2023-10/orders.json?status=any&created_at_min=${startDateISO}&limit=250`,
-      {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json'
-        }
-      }
-    )
-
-    if (!ordersResponse.ok) {
-      const errorText = await ordersResponse.text()
-      console.error('Shopify Orders API Error:', errorText)
-      throw new Error(`Failed to fetch orders: ${ordersResponse.status} ${ordersResponse.statusText}`)
-    }
-
-    const ordersData = await ordersResponse.json()
-    const orders = ordersData.orders || []
-
-    console.log(`📦 Found ${orders.length} orders from Shopify`)
-
-    // Fetch customers
-    const customersResponse = await fetch(
-      `https://${shopDomain}.myshopify.com/admin/api/2023-10/customers.json?created_at_min=${startDateISO}&limit=250`,
-      {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json'
-        }
-      }
-    )
-
-    let customers = []
-    if (customersResponse.ok) {
-      const customersData = await customersResponse.json()
-      customers = customersData.customers || []
-      console.log(`👥 Found ${customers.length} customers from Shopify`)
-    } else {
-      console.warn('Could not fetch customers, continuing with orders only')
-    }
-
-    // Fetch products for additional metrics
-    const productsResponse = await fetch(
-      `https://${shopDomain}.myshopify.com/admin/api/2023-10/products.json?limit=250`,
-      {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json'
-        }
-      }
-    )
-
-    let products = []
-    if (productsResponse.ok) {
-      const productsData = await productsResponse.json()
-      products = productsData.products || []
-      console.log(`🛍️ Found ${products.length} products from Shopify`)
-    }
-
-    // Process and store the real data
-    await processRealShopifyData(integrationId, orders, customers, products)
-
-    console.log('✅ Real Shopify data processed successfully')
-
-  } catch (error) {
-    console.error('❌ Failed to fetch real Shopify data:', error)
-    throw error
-  }
-}
-
-/**
- * Process real Shopify data and store as data points
- */
-async function processRealShopifyData(integrationId: string, orders: any[], customers: any[], products: any[] = []) {
-  const dataPoints = []
-  
-  // Group orders by date and process metrics
-  const ordersByDate = new Map<string, { revenue: number; orderCount: number; customerIds: Set<string> }>()
-  
-  orders.forEach(order => {
-    const orderDate = new Date(order.created_at).toISOString().split('T')[0]
-    const revenue = parseFloat(order.total_price || '0')
-    const customerId = order.customer?.id || null
+    const session = await getServerSession(authOptions)
     
-    if (!ordersByDate.has(orderDate)) {
-      ordersByDate.set(orderDate, {
-        revenue: 0,
-        orderCount: 0,
-        customerIds: new Set()
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { searchParams } = new URL(req.url)
+    const organizationId = searchParams.get('organizationId')
+
+    if (!organizationId) {
+      return NextResponse.json({ error: 'Organization ID required' }, { status: 400 })
+    }
+
+    // Verify user has access to this organization
+    const organizationMember = await prisma.organizationMember.findFirst({
+      where: {
+        organizationId,
+        userId: session.user.id
+      }
+    })
+
+    if (!organizationMember) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
+    // Get existing Shopify integration
+    const integration = await prisma.integration.findUnique({
+      where: {
+        organizationId_platform: {
+          organizationId,
+          platform: 'shopify'
+        }
+      },
+      include: {
+        _count: {
+          select: {
+            dataPoints: true
+          }
+        }
+      }
+    })
+
+    if (!integration) {
+      return NextResponse.json({
+        connected: false,
+        integration: null
       })
     }
-    
-    const dayData = ordersByDate.get(orderDate)!
-    dayData.revenue += revenue
-    dayData.orderCount += 1
-    if (customerId) {
-      dayData.customerIds.add(customerId.toString())
-    }
-  })
-  
-  // Create data points for each date
-  ordersByDate.forEach((dayData, dateStr) => {
-    const date = new Date(dateStr)
-    
-    // Revenue data point
-    dataPoints.push({
-      integrationId,
-      metricType: 'revenue',
-      value: dayData.revenue,
-      metadata: {
-        currency: 'USD',
-        source: 'shopify',
-        type: 'real_data',
-        orderCount: dayData.orderCount
-      },
-      dateRecorded: date,
-      createdAt: new Date()
-    })
-    
-    // Orders data point
-    dataPoints.push({
-      integrationId,
-      metricType: 'orders',
-      value: dayData.orderCount,
-      metadata: {
-        source: 'shopify',
-        type: 'real_data',
-        avgOrderValue: dayData.orderCount > 0 ? dayData.revenue / dayData.orderCount : 0
-      },
-      dateRecorded: date,
-      createdAt: new Date()
-    })
-    
-    // Customers data point (unique customers per day)
-    dataPoints.push({
-      integrationId,
-      metricType: 'customers',
-      value: dayData.customerIds.size,
-      metadata: {
-        source: 'shopify',
-        type: 'real_data',
-        totalCustomers: dayData.customerIds.size
-      },
-      dateRecorded: date,
-      createdAt: new Date()
-    })
-  })
 
-  // Add product count as a separate metric
-  if (products.length > 0) {
-    const today = new Date()
-    dataPoints.push({
-      integrationId,
-      metricType: 'products',
-      value: products.length,
-      metadata: {
-        source: 'shopify',
-        type: 'real_data',
-        activeProducts: products.filter(p => p.status === 'active').length
-      },
-      dateRecorded: today,
-      createdAt: new Date()
+    return NextResponse.json({
+      connected: integration.status === 'active',
+      integration: {
+        id: integration.id,
+        platform: integration.platform,
+        platformAccountId: integration.platformAccountId,
+        status: integration.status,
+        lastSyncAt: integration.lastSyncAt?.toISOString() || null,
+        dataPointsCount: integration._count.dataPoints,
+        createdAt: integration.createdAt.toISOString(),
+        metadata: {
+          shopName: (integration.metadata as any)?.shopName,
+          scopes: (integration.metadata as any)?.scopes
+        }
+      }
     })
-  }
 
-  // Store all data points
-  if (dataPoints.length > 0) {
-    await prisma.dataPoint.createMany({
-      data: dataPoints,
-      skipDuplicates: true
-    })
-    
-    console.log(`💾 Stored ${dataPoints.length} real data points from Shopify`)
-  } else {
-    console.log('⚠️ No data points to store - store may be empty or have no recent orders')
+  } catch (error) {
+    console.error('Shopify connection status API error:', error)
+    return NextResponse.json(
+      { 
+        error: 'Internal server error',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
+      { status: 500 }
+    )
   }
 }

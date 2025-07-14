@@ -3,367 +3,346 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { z } from 'zod'
 
-/**
- * GET /api/insights
- * Get insights for the user's organization
- */
-export async function GET(request: NextRequest) {
+// Validation schema for creating insights
+const createInsightSchema = z.object({
+  organizationId: z.string().min(1),
+  type: z.enum(['trend', 'anomaly', 'recommendation']),
+  title: z.string().min(1).max(200),
+  description: z.string().min(1).max(2000),
+  impactScore: z.number().min(1).max(10),
+  metadata: z.record(z.any()).optional().default({})
+})
+
+// Validation schema for querying insights
+const queryInsightsSchema = z.object({
+  organizationId: z.string().optional(),
+  type: z.enum(['trend', 'anomaly', 'recommendation']).optional(),
+  isRead: z.enum(['true', 'false']).optional(),
+  limit: z.string().regex(/^\d+$/).transform(Number).optional().default('10'),
+  offset: z.string().regex(/^\d+$/).transform(Number).optional().default('0')
+})
+
+export async function GET(req: NextRequest) {
   try {
-    // Check authentication
     const session = await getServerSession(authOptions)
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: 'Authentication required' },
-        { status: 401 }
-      )
-    }
-
-    const { searchParams } = new URL(request.url)
-    const limit = parseInt(searchParams.get('limit') || '20')
-    const page = parseInt(searchParams.get('page') || '1')
-    const type = searchParams.get('type')
-    const unreadOnly = searchParams.get('unreadOnly') === 'true'
-
-    console.log('💡 Fetching insights for user:', session.user.id, {
-      limit,
-      page,
-      type,
-      unreadOnly
-    })
-
-    // Get user's default organization
-    const membership = await prisma.organizationMember.findFirst({
-      where: {
-        userId: session.user.id
-      },
-      include: {
-        organization: true
-      },
-      orderBy: {
-        createdAt: 'asc' // First organization
-      }
-    })
-
-    if (!membership) {
-      // Return empty insights if no organization
-      return NextResponse.json({
-        insights: [],
-        pagination: {
-          currentPage: 1,
-          totalPages: 0,
-          totalCount: 0,
-          hasNextPage: false,
-          hasPreviousPage: false,
-          limit
-        },
-        summary: {
-          totalInsights: 0,
-          unreadCount: 0,
-          readCount: 0,
-          typeBreakdown: {}
-        }
-      })
-    }
-
-    // Build where clause
-    const whereClause: any = {
-      organizationId: membership.organizationId
-    }
-
-    if (type && type !== 'all') {
-      whereClause.type = type
-    }
-
-    if (unreadOnly) {
-      whereClause.isRead = false
-    }
-
-    // Get insights with pagination
-    const [insights, totalCount, summary] = await Promise.all([
-      prisma.insight.findMany({
-        where: whereClause,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit
-      }),
-      prisma.insight.count({
-        where: whereClause
-      }),
-      getInsightsSummary(membership.organizationId)
-    ])
-
-    // Transform insights with additional metadata
-    const transformedInsights = insights.map(insight => ({
-      ...insight,
-      relativeTime: getRelativeTime(insight.createdAt),
-      impactLevel: getImpactLevel(insight.impactScore),
-      typeDisplayName: getTypeDisplayName(insight.type)
-    }))
-
-    const totalPages = Math.ceil(totalCount / limit)
-
-    console.log('✅ Found', insights.length, 'insights')
-
-    return NextResponse.json({
-      insights: transformedInsights,
-      pagination: {
-        currentPage: page,
-        totalPages,
-        totalCount,
-        hasNextPage: page < totalPages,
-        hasPreviousPage: page > 1,
-        limit
-      },
-      summary
-    })
-
-  } catch (error) {
-    console.error('❌ Error fetching insights:', error)
     
-    // Return fallback insights on error
-    const fallbackInsights = [
-      {
-        id: 'fallback-1',
-        type: 'trend',
-        title: 'Welcome to BizInsights!',
-        description: 'Your analytics dashboard is ready. Connect your first integration to start receiving AI-powered insights about your business performance.',
-        impactScore: 75,
-        isRead: false,
-        createdAt: new Date().toISOString(),
-        relativeTime: 'Just now',
-        impactLevel: 'high',
-        typeDisplayName: 'Getting Started'
-      },
-      {
-        id: 'fallback-2',
-        type: 'recommendation',
-        title: 'Connect Your Data Sources',
-        description: 'To unlock the full power of BizInsights, connect your Shopify store, Stripe payments, or Google Analytics. This enables our AI to provide personalized recommendations.',
-        impactScore: 80,
-        isRead: false,
-        createdAt: new Date(Date.now() - 300000).toISOString(),
-        relativeTime: '5m ago',
-        impactLevel: 'high',
-        typeDisplayName: 'Setup Guide'
-      },
-      {
-        id: 'fallback-3',
-        type: 'opportunity',
-        title: 'Explore Your Dashboard',
-        description: 'Check out the Analytics section to see your revenue trends, or visit Integrations to connect your business tools. The Reports section lets you generate automated insights.',
-        impactScore: 60,
-        isRead: false,
-        createdAt: new Date(Date.now() - 600000).toISOString(),
-        relativeTime: '10m ago',
-        impactLevel: 'medium',
-        typeDisplayName: 'Tour Guide'
-      }
-    ]
-
-    return NextResponse.json({
-      insights: fallbackInsights,
-      pagination: {
-        currentPage: 1,
-        totalPages: 1,
-        totalCount: 3,
-        hasNextPage: false,
-        hasPreviousPage: false,
-        limit: 20
-      },
-      summary: {
-        totalInsights: 3,
-        unreadCount: 3,
-        readCount: 0,
-        typeBreakdown: {
-          trend: 1,
-          recommendation: 1,
-          opportunity: 1
-        }
-      }
-    })
-  }
-}
-
-/**
- * POST /api/insights
- * Generate new insights
- */
-export async function POST(request: NextRequest) {
-  try {
-    // Check authentication
-    const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: 'Authentication required' },
-        { status: 401 }
-      )
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const body = await request.json()
-    const { action } = body
+    const { searchParams } = new URL(req.url)
+    const query = {
+      organizationId: searchParams.get('organizationId'),
+      type: searchParams.get('type'),
+      isRead: searchParams.get('isRead'),
+      limit: searchParams.get('limit') || '10',
+      offset: searchParams.get('offset') || '0'
+    }
 
-    if (action !== 'generate') {
+    // Validate query parameters
+    const validation = queryInsightsSchema.safeParse(query)
+    if (!validation.success) {
       return NextResponse.json(
-        { error: 'Invalid action' },
+        { error: 'Invalid query parameters', details: validation.error.errors },
         { status: 400 }
       )
     }
 
-    console.log('🔄 Generating new insights for user:', session.user.id)
+    const { organizationId, type, isRead, limit, offset } = validation.data
 
-    // Get user's organization
-    const membership = await prisma.organizationMember.findFirst({
-      where: {
-        userId: session.user.id
+    // Build where clause
+    let whereClause: any = {}
+
+    // If organizationId is provided, verify user has access
+    if (organizationId) {
+      const organizationMember = await prisma.organizationMember.findFirst({
+        where: {
+          organizationId,
+          userId: session.user.id
+        }
+      })
+
+      if (!organizationMember) {
+        return NextResponse.json({ error: 'Organization not found or access denied' }, { status: 404 })
+      }
+
+      whereClause.organizationId = organizationId
+    } else {
+      // Get all organizations user has access to
+      const userOrganizations = await prisma.organizationMember.findMany({
+        where: {
+          userId: session.user.id
+        },
+        select: {
+          organizationId: true
+        }
+      })
+
+      whereClause.organizationId = {
+        in: userOrganizations.map(org => org.organizationId)
+      }
+    }
+
+    // Add optional filters
+    if (type) {
+      whereClause.type = type
+    }
+
+    if (isRead !== undefined) {
+      whereClause.isRead = isRead === 'true'
+    }
+
+    // Fetch insights with pagination
+    const [insights, totalCount] = await Promise.all([
+      prisma.insight.findMany({
+        where: whereClause,
+        include: {
+          organization: {
+            select: {
+              id: true,
+              name: true,
+              slug: true
+            }
+          }
+        },
+        orderBy: [
+          { isRead: 'asc' }, // Unread first
+          { impactScore: 'desc' }, // High impact first
+          { createdAt: 'desc' } // Most recent first
+        ],
+        take: limit,
+        skip: offset
+      }),
+      prisma.insight.count({
+        where: whereClause
+      })
+    ])
+
+    // Transform insights for response
+    const transformedInsights = insights.map(insight => ({
+      id: insight.id,
+      type: insight.type,
+      title: insight.title,
+      description: insight.description,
+      impactScore: insight.impactScore,
+      isRead: insight.isRead,
+      createdAt: insight.createdAt.toISOString(),
+      metadata: insight.metadata,
+      organization: insight.organization
+    }))
+
+    // Calculate summary statistics
+    const unreadCount = insights.filter(insight => !insight.isRead).length
+    const highImpactCount = insights.filter(insight => insight.impactScore >= 7).length
+
+    return NextResponse.json({
+      insights: transformedInsights,
+      pagination: {
+        total: totalCount,
+        limit,
+        offset,
+        hasNext: offset + limit < totalCount,
+        hasPrev: offset > 0
+      },
+      summary: {
+        total: totalCount,
+        unread: unreadCount,
+        highImpact: highImpactCount,
+        byType: {
+          trend: insights.filter(i => i.type === 'trend').length,
+          anomaly: insights.filter(i => i.type === 'anomaly').length,
+          recommendation: insights.filter(i => i.type === 'recommendation').length
+        }
       }
     })
 
-    if (!membership) {
-      return NextResponse.json(
-        { error: 'No organization found' },
-        { status: 404 }
-      )
-    }
-
-    // Generate sample insights (in real app, this would use AI)
-    const newInsights = await generateSampleInsights(membership.organizationId)
-
-    console.log('✅ Generated', newInsights.length, 'new insights')
-
-    return NextResponse.json({
-      success: true,
-      message: `Generated ${newInsights.length} new insights`,
-      insights: newInsights
-    })
-
   } catch (error) {
-    console.error('❌ Error generating insights:', error)
+    console.error('GET insights API error:', error)
     return NextResponse.json(
-      { error: 'Failed to generate insights' },
+      { 
+        error: 'Internal server error',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     )
   }
 }
 
-// Helper functions
+export async function POST(req: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions)
+    
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
 
-async function getInsightsSummary(organizationId: string) {
-  const [totalCount, unreadCount, typeBreakdown] = await Promise.all([
-    prisma.insight.count({
-      where: { organizationId }
-    }),
-    prisma.insight.count({
-      where: { organizationId, isRead: false }
-    }),
-    prisma.insight.groupBy({
-      by: ['type'],
-      where: { organizationId },
-      _count: { id: true }
+    const body = await req.json()
+
+    // Validate request body
+    const validation = createInsightSchema.safeParse(body)
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: 'Invalid request data', details: validation.error.errors },
+        { status: 400 }
+      )
+    }
+
+    const { organizationId, type, title, description, impactScore, metadata } = validation.data
+
+    // Verify user has admin or owner access to this organization
+    const organizationMember = await prisma.organizationMember.findFirst({
+      where: {
+        organizationId,
+        userId: session.user.id,
+        role: {
+          in: ['owner', 'admin'] // Only admins and owners can create insights
+        }
+      }
     })
-  ])
 
-  const breakdown = typeBreakdown.reduce((acc, item) => {
-    acc[item.type] = item._count.id
-    return acc
-  }, {} as Record<string, number>)
+    if (!organizationMember) {
+      return NextResponse.json({ error: 'Access denied - admin role required' }, { status: 403 })
+    }
 
-  return {
-    totalInsights: totalCount,
-    unreadCount,
-    readCount: totalCount - unreadCount,
-    typeBreakdown: breakdown
+    // Create the insight
+    const insight = await prisma.insight.create({
+      data: {
+        organizationId,
+        type,
+        title,
+        description,
+        impactScore,
+        metadata,
+        isRead: false
+      },
+      include: {
+        organization: {
+          select: {
+            id: true,
+            name: true,
+            slug: true
+          }
+        }
+      }
+    })
+
+    return NextResponse.json({
+      success: true,
+      insight: {
+        id: insight.id,
+        type: insight.type,
+        title: insight.title,
+        description: insight.description,
+        impactScore: insight.impactScore,
+        isRead: insight.isRead,
+        createdAt: insight.createdAt.toISOString(),
+        metadata: insight.metadata,
+        organization: insight.organization
+      }
+    }, { status: 201 })
+
+  } catch (error) {
+    console.error('POST insights API error:', error)
+    return NextResponse.json(
+      { 
+        error: 'Internal server error',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
+      { status: 500 }
+    )
   }
 }
 
-function getRelativeTime(createdAt: Date): string {
-  const now = new Date()
-  const created = new Date(createdAt)
-  const diffMs = now.getTime() - created.getTime()
-  const diffMinutes = Math.floor(diffMs / (1000 * 60))
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+// PATCH endpoint for bulk operations (mark multiple as read, etc.)
+export async function PATCH(req: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions)
+    
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
 
-  if (diffMinutes < 1) return 'Just now'
-  if (diffMinutes < 60) return `${diffMinutes}m ago`
-  if (diffHours < 24) return `${diffHours}h ago`
-  if (diffDays < 7) return `${diffDays}d ago`
-  return created.toLocaleDateString()
-}
+    const body = await req.json()
+    const { action, insightIds, organizationId } = body
 
-function getImpactLevel(score: number): string {
-  if (score >= 80) return 'high'
-  if (score >= 60) return 'medium'
-  return 'low'
-}
+    if (!action || !Array.isArray(insightIds) || insightIds.length === 0) {
+      return NextResponse.json({ error: 'Invalid request data' }, { status: 400 })
+    }
 
-function getTypeDisplayName(type: string): string {
-  switch (type.toLowerCase()) {
-    case 'trend': return 'Trend Analysis'
-    case 'opportunity': return 'Growth Opportunity'
-    case 'alert': return 'Alert'
-    case 'anomaly': return 'Anomaly Detected'
-    case 'recommendation': return 'Recommendation'
-    default: return type.charAt(0).toUpperCase() + type.slice(1)
-  }
-}
+    // Verify user has access to the organization
+    if (organizationId) {
+      const organizationMember = await prisma.organizationMember.findFirst({
+        where: {
+          organizationId,
+          userId: session.user.id
+        }
+      })
 
-async function generateSampleInsights(organizationId: string) {
-  const sampleInsights = [
-    {
-      organizationId,
-      type: 'trend',
-      title: 'Revenue Growth Trending Upward',
-      description: 'Your revenue has shown consistent growth over the past 2 weeks. This positive trend suggests effective marketing strategies and customer retention.',
-      impactScore: Math.floor(Math.random() * 20) + 70, // 70-90
-      isRead: false,
-      metadata: {
-        generatedAt: new Date().toISOString(),
-        dataPoints: ['revenue', 'orders'],
-        confidence: 0.85
-      }
-    },
-    {
-      organizationId,
-      type: 'opportunity',
-      title: 'Customer Acquisition Opportunity',
-      description: 'Analysis shows that customers acquired through social media have 25% higher lifetime value. Consider increasing social media marketing budget.',
-      impactScore: Math.floor(Math.random() * 15) + 75, // 75-90
-      isRead: false,
-      metadata: {
-        generatedAt: new Date().toISOString(),
-        dataPoints: ['customers', 'revenue'],
-        confidence: 0.78
-      }
-    },
-    {
-      organizationId,
-      type: 'recommendation',
-      title: 'Optimize Checkout Process',
-      description: 'Cart abandonment rate is higher than industry average. Consider implementing exit-intent popups or simplified checkout flow.',
-      impactScore: Math.floor(Math.random() * 10) + 65, // 65-75
-      isRead: false,
-      metadata: {
-        generatedAt: new Date().toISOString(),
-        dataPoints: ['conversion', 'sessions'],
-        confidence: 0.72
+      if (!organizationMember) {
+        return NextResponse.json({ error: 'Organization not found or access denied' }, { status: 404 })
       }
     }
-  ]
 
-  // Create insights in database
-  const createdInsights = await Promise.all(
-    sampleInsights.map(insight =>
-      prisma.insight.create({
-        data: insight
+    let updateData: any = {}
+    
+    switch (action) {
+      case 'mark_read':
+        updateData.isRead = true
+        break
+      case 'mark_unread':
+        updateData.isRead = false
+        break
+      default:
+        return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
+    }
+
+    // Build where clause for the insights
+    let whereClause: any = {
+      id: {
+        in: insightIds
+      }
+    }
+
+    if (organizationId) {
+      whereClause.organizationId = organizationId
+    } else {
+      // Ensure user only updates insights from organizations they have access to
+      const userOrganizations = await prisma.organizationMember.findMany({
+        where: {
+          userId: session.user.id
+        },
+        select: {
+          organizationId: true
+        }
       })
-    )
-  )
 
-  return createdInsights.map(insight => ({
-    ...insight,
-    relativeTime: getRelativeTime(insight.createdAt),
-    impactLevel: getImpactLevel(insight.impactScore),
-    typeDisplayName: getTypeDisplayName(insight.type)
-  }))
+      whereClause.organizationId = {
+        in: userOrganizations.map(org => org.organizationId)
+      }
+    }
+
+    // Perform bulk update
+    const result = await prisma.insight.updateMany({
+      where: whereClause,
+      data: updateData
+    })
+
+    return NextResponse.json({
+      success: true,
+      updatedCount: result.count,
+      action
+    })
+
+  } catch (error) {
+    console.error('PATCH insights API error:', error)
+    return NextResponse.json(
+      { 
+        error: 'Internal server error',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
+      { status: 500 }
+    )
+  }
 }
