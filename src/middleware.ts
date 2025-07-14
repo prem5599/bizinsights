@@ -2,116 +2,61 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 
-// Rate limiting store (in production, use Redis)
-const rateLimitStore = new Map<string, { count: number; resetTime: number }>()
-
-/**
- * Rate limiting configuration
- */
-const RATE_LIMITS = {
-  api: { max: 100, window: 15 * 60 * 1000 }, // 100 requests per 15 minutes
-  auth: { max: 5, window: 15 * 60 * 1000 },  // 5 auth attempts per 15 minutes
-  webhooks: { max: 1000, window: 60 * 1000 }, // 1000 webhook calls per minute
-  insights: { max: 10, window: 60 * 1000 }   // 10 insight generations per minute
-}
-
-/**
- * Security headers for all responses
- */
+// Security headers
 const SECURITY_HEADERS = {
-  'X-DNS-Prefetch-Control': 'off',
-  'X-Frame-Options': 'DENY',
   'X-Content-Type-Options': 'nosniff',
-  'Referrer-Policy': 'origin-when-cross-origin',
+  'X-Frame-Options': 'DENY',
+  'X-XSS-Protection': '1; mode=block',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
-  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
-  'Content-Security-Policy': [
-    "default-src 'self'",
-    "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://js.stripe.com https://maps.googleapis.com",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com",
-    "img-src 'self' data: https: blob:",
-    "connect-src 'self' https://api.stripe.com https://maps.googleapis.com https://analytics.google.com wss:",
-    "frame-src https://js.stripe.com https://hooks.stripe.com",
-    "object-src 'none'",
-    "base-uri 'self'",
-    "form-action 'self'"
-  ].join('; ')
 }
 
 /**
- * Apply rate limiting
+ * Rate limiting storage (in-memory for development)
  */
-function rateLimit(
-  request: NextRequest, 
-  identifier: string, 
-  config: { max: number; window: number }
-): { limited: boolean; remaining: number; resetTime: number } {
+const rateLimitMap = new Map<string, { count: number; lastReset: number }>()
+
+/**
+ * Simple rate limiting
+ */
+function isRateLimited(clientId: string, limit: number = 60, windowMs: number = 60000): boolean {
   const now = Date.now()
-  const key = `${identifier}-${Math.floor(now / config.window)}`
+  const windowStart = now - windowMs
   
-  const current = rateLimitStore.get(key) || { count: 0, resetTime: now + config.window }
+  const clientData = rateLimitMap.get(clientId)
   
-  if (current.count >= config.max) {
-    return {
-      limited: true,
-      remaining: 0,
-      resetTime: current.resetTime
-    }
+  if (!clientData || clientData.lastReset < windowStart) {
+    rateLimitMap.set(clientId, { count: 1, lastReset: now })
+    return false
   }
   
-  current.count++
-  rateLimitStore.set(key, current)
-  
-  // Cleanup old entries (basic cleanup)
-  if (Math.random() < 0.01) { // 1% chance to cleanup
-    for (const [key, value] of rateLimitStore.entries()) {
-      if (value.resetTime < now) {
-        rateLimitStore.delete(key)
-      }
-    }
+  if (clientData.count >= limit) {
+    return true
   }
   
-  return {
-    limited: false,
-    remaining: config.max - current.count,
-    resetTime: current.resetTime
-  }
+  clientData.count++
+  return false
 }
 
 /**
  * Get client identifier for rate limiting
  */
 function getClientIdentifier(request: NextRequest): string {
-  // Try to get real IP behind proxies
   const forwarded = request.headers.get('x-forwarded-for')
-  const realIp = request.headers.get('x-real-ip')
-  const cfConnectingIp = request.headers.get('cf-connecting-ip')
-  
-  const ip = cfConnectingIp || realIp || forwarded?.split(',')[0] || 'unknown'
-  
-  return ip.trim()
+  const realIP = request.headers.get('x-real-ip')
+  const ip = forwarded?.split(',')[0] || realIP || 'unknown'
+  return ip
 }
 
 /**
- * Validate webhook signatures
+ * Validate webhook signature
  */
-function validateWebhookSignature(request: NextRequest, body: string): boolean {
+function validateWebhookSignature(request: NextRequest): boolean {
   const pathname = request.nextUrl.pathname
   
-  if (pathname.includes('/webhooks/stripe')) {
-    const signature = request.headers.get('stripe-signature')
-    const secret = process.env.STRIPE_WEBHOOK_SECRET
-    
-    if (!signature || !secret) return false
-    
-    // In production, use proper Stripe signature validation
-    // This is a simplified check
-    return signature.length > 10
-  }
-  
-  if (pathname.includes('/webhooks/shopify')) {
-    const signature = request.headers.get('x-shopify-hmac-sha256')
+  // Shopify webhook validation
+  if (pathname.includes('/webhook/shopify')) {
+    const signature = request.headers.get('X-Shopify-Hmac-Sha256')
     const secret = process.env.SHOPIFY_WEBHOOK_SECRET
     
     if (!signature || !secret) return false
@@ -188,79 +133,42 @@ export async function middleware(request: NextRequest) {
     pathname.endsWith('.ico') ||
     pathname.endsWith('.png') ||
     pathname.endsWith('.jpg') ||
-    pathname.endsWith('.svg')
+    pathname.endsWith('.svg') ||
+    pathname.includes('.')
   ) {
     return response
   }
   
   try {
-    // 1. Rate Limiting
-    let rateLimitConfig = RATE_LIMITS.api
-    let rateLimitId = clientId
-    
-    if (pathname.startsWith('/api/auth')) {
-      rateLimitConfig = RATE_LIMITS.auth
-      rateLimitId = `auth-${clientId}`
-    } else if (pathname.includes('/webhooks/')) {
-      rateLimitConfig = RATE_LIMITS.webhooks
-      rateLimitId = `webhook-${clientId}`
-    } else if (pathname.includes('/api/insights/generate')) {
-      rateLimitConfig = RATE_LIMITS.insights
-      rateLimitId = `insights-${clientId}`
-    }
-    
-    const rateResult = rateLimit(request, rateLimitId, rateLimitConfig)
-    
-    // Add rate limit headers
-    response.headers.set('X-RateLimit-Limit', rateLimitConfig.max.toString())
-    response.headers.set('X-RateLimit-Remaining', rateResult.remaining.toString())
-    response.headers.set('X-RateLimit-Reset', rateResult.resetTime.toString())
-    
-    if (rateResult.limited) {
+    // 1. Rate limiting
+    if (isRateLimited(clientId)) {
+      console.log(`🚫 Rate limit exceeded for client: ${clientId}`)
       return new NextResponse(
-        JSON.stringify({
-          error: 'Rate limit exceeded',
-          retryAfter: Math.ceil((rateResult.resetTime - Date.now()) / 1000)
-        }),
+        JSON.stringify({ error: 'Rate limit exceeded' }),
         {
           status: 429,
           headers: {
             'Content-Type': 'application/json',
-            'Retry-After': Math.ceil((rateResult.resetTime - Date.now()) / 1000).toString(),
+            'Retry-After': '60',
             ...Object.fromEntries(response.headers.entries())
           }
         }
       )
     }
     
-    // 2. Webhook signature validation
-    if (pathname.includes('/webhooks/')) {
-      const body = await request.text()
-      const isValidSignature = validateWebhookSignature(request, body)
-      
-      if (!isValidSignature) {
-        return new NextResponse(
-          JSON.stringify({ error: 'Invalid webhook signature' }),
-          {
-            status: 401,
-            headers: {
-              'Content-Type': 'application/json',
-              ...Object.fromEntries(response.headers.entries())
-            }
+    // 2. Webhook validation
+    if (pathname.includes('/webhook/') && !validateWebhookSignature(request)) {
+      console.log(`🚫 Invalid webhook signature for: ${pathname}`)
+      return new NextResponse(
+        JSON.stringify({ error: 'Invalid signature' }),
+        {
+          status: 401,
+          headers: {
+            'Content-Type': 'application/json',
+            ...Object.fromEntries(response.headers.entries())
           }
-        )
-      }
-      
-      // Recreate request with body for webhook handlers
-      const newRequest = new NextRequest(request.url, {
-        method: request.method,
-        headers: request.headers,
-        body
-      })
-      
-      return NextResponse.next({
-        request: newRequest
-      })
+        }
+      )
     }
     
     // 3. Authentication check for protected routes
@@ -271,6 +179,8 @@ export async function middleware(request: NextRequest) {
       })
       
       if (!token) {
+        console.log(`🚫 Authentication required for: ${pathname}`)
+        
         if (pathname.startsWith('/api/')) {
           return new NextResponse(
             JSON.stringify({ error: 'Authentication required' }),
@@ -286,6 +196,7 @@ export async function middleware(request: NextRequest) {
           // Redirect to login for dashboard routes
           const loginUrl = new URL('/auth/signin', request.url)
           loginUrl.searchParams.set('callbackUrl', pathname)
+          console.log(`🔀 Redirecting to login: ${loginUrl.toString()}`)
           return NextResponse.redirect(loginUrl)
         }
       }
@@ -294,6 +205,8 @@ export async function middleware(request: NextRequest) {
       const hasRequiredPermission = await hasPermission(request, pathname)
       
       if (!hasRequiredPermission) {
+        console.log(`🚫 Insufficient permissions for: ${pathname}`)
+        
         if (pathname.startsWith('/api/')) {
           return new NextResponse(
             JSON.stringify({ error: 'Insufficient permissions' }),
@@ -346,7 +259,7 @@ export async function middleware(request: NextRequest) {
     return response
     
   } catch (error) {
-    console.error('Middleware error:', error)
+    console.error('❌ Middleware error:', error)
     
     // Return a generic error response
     return new NextResponse(
@@ -377,7 +290,3 @@ export const config = {
     '/((?!_next/static|_next/image|favicon.ico|public/).*)',
   ],
 }
-
-
-
-

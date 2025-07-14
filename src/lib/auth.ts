@@ -13,6 +13,25 @@ const signInSchema = z.object({
   password: z.string().min(6, "Password must be at least 6 characters"),
 })
 
+// Environment variable validation
+const requiredEnvVars = {
+  NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
+  NEXTAUTH_URL: process.env.NEXTAUTH_URL,
+  DATABASE_URL: process.env.DATABASE_URL,
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+}
+
+// Check for missing environment variables
+const missingEnvVars = Object.entries(requiredEnvVars)
+  .filter(([key, value]) => !value)
+  .map(([key]) => key)
+
+if (missingEnvVars.length > 0) {
+  console.error(`❌ Missing required environment variables: ${missingEnvVars.join(', ')}`)
+  throw new Error(`Missing required environment variables: ${missingEnvVars.join(', ')}`)
+}
+
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   providers: [
@@ -23,7 +42,8 @@ export const authOptions: NextAuthOptions = {
         params: {
           prompt: "consent",
           access_type: "offline",
-          response_type: "code"
+          response_type: "code",
+          scope: "openid email profile"
         }
       }
     }),
@@ -45,12 +65,14 @@ export const authOptions: NextAuthOptions = {
         try {
           // Validate input
           if (!credentials?.email || !credentials?.password) {
-            throw new Error("Email and password are required")
+            console.error("❌ Missing email or password in credentials")
+            return null
           }
 
           const validation = signInSchema.safeParse(credentials)
           if (!validation.success) {
-            throw new Error("Invalid email or password format")
+            console.error("❌ Invalid credentials format:", validation.error.issues)
+            return null
           }
 
           const { email, password } = validation.data
@@ -69,14 +91,18 @@ export const authOptions: NextAuthOptions = {
           })
 
           if (!user || !user.password) {
-            throw new Error("Invalid email or password")
+            console.error("❌ User not found or no password set:", email)
+            return null
           }
 
           // Verify password
           const isPasswordValid = await bcrypt.compare(password, user.password)
           if (!isPasswordValid) {
-            throw new Error("Invalid email or password")
+            console.error("❌ Invalid password for user:", email)
+            return null
           }
+
+          console.log("✅ User authenticated successfully:", email)
 
           // Return user object (without password)
           return {
@@ -86,7 +112,7 @@ export const authOptions: NextAuthOptions = {
             image: user.image,
           }
         } catch (error) {
-          console.error("Credentials authorization error:", error)
+          console.error("❌ Credentials authorization error:", error)
           return null
         }
       }
@@ -100,32 +126,51 @@ export const authOptions: NextAuthOptions = {
     newUser: "/dashboard"
   },
   callbacks: {
-    async signIn({ user, account, profile, email, credentials }) {
+    async signIn({ user, account, profile }) {
       try {
+        console.log(`🔄 Sign in attempt - Provider: ${account?.provider}, User: ${user.email}`)
+        
         // Allow OAuth sign-ins
         if (account?.provider === "google") {
+          console.log("✅ Google OAuth sign-in allowed")
           return true
         }
 
         // Allow credentials sign-ins
         if (account?.provider === "credentials") {
+          console.log("✅ Credentials sign-in allowed")
           return true
         }
 
+        console.error("❌ Sign-in denied - unsupported provider:", account?.provider)
         return false
       } catch (error) {
-        console.error("SignIn callback error:", error)
+        console.error("❌ SignIn callback error:", error)
         return false
       }
     },
     async redirect({ url, baseUrl }) {
+      console.log(`🔄 Redirect callback - URL: ${url}, Base: ${baseUrl}`)
+      
       // Allows relative callback URLs
-      if (url.startsWith("/")) return `${baseUrl}${url}`
+      if (url.startsWith("/")) {
+        const redirectUrl = `${baseUrl}${url}`
+        console.log("✅ Relative redirect to:", redirectUrl)
+        return redirectUrl
+      }
+      
       // Allows callback URLs on the same origin
-      else if (new URL(url).origin === baseUrl) return url
-      return baseUrl + "/dashboard"
+      if (new URL(url).origin === baseUrl) {
+        console.log("✅ Same origin redirect to:", url)
+        return url
+      }
+      
+      // Default redirect
+      const defaultUrl = `${baseUrl}/dashboard`
+      console.log("✅ Default redirect to:", defaultUrl)
+      return defaultUrl
     },
-    async session({ session, token, user }) {
+    async session({ session, token }) {
       try {
         // Send properties to the client
         if (session.user && token.sub) {
@@ -171,7 +216,7 @@ export const authOptions: NextAuthOptions = {
 
         return session
       } catch (error) {
-        console.error("Session callback error:", error)
+        console.error("❌ Session callback error:", error)
         return session
       }
     },
@@ -182,6 +227,7 @@ export const authOptions: NextAuthOptions = {
           token.accessToken = account.access_token
           token.refreshToken = account.refresh_token
           token.accessTokenExpires = account.expires_at
+          console.log("✅ JWT token created for user:", user.email)
         }
 
         // Return previous token if the access token has not expired yet
@@ -191,12 +237,13 @@ export const authOptions: NextAuthOptions = {
 
         // Access token has expired, try to update it
         if (token.refreshToken) {
+          console.log("🔄 Refreshing access token")
           return await refreshAccessToken(token)
         }
 
         return token
       } catch (error) {
-        console.error("JWT callback error:", error)
+        console.error("❌ JWT callback error:", error)
         return token
       }
     }
@@ -211,7 +258,7 @@ export const authOptions: NextAuthOptions = {
   },
   events: {
     async signIn({ user, account, profile, isNewUser }) {
-      console.log(`User signed in: ${user.email} via ${account?.provider}`)
+      console.log(`✅ User signed in: ${user.email} via ${account?.provider}`)
       
       // Create default organization for new users
       if (isNewUser && user.id) {
@@ -228,17 +275,14 @@ export const authOptions: NextAuthOptions = {
               }
             }
           })
-          console.log(`Created default organization for new user: ${organization.id}`)
+          console.log(`✅ Created default organization for new user: ${organization.id}`)
         } catch (error) {
-          console.error("Error creating default organization:", error)
+          console.error("❌ Error creating default organization:", error)
         }
       }
     },
     async signOut({ session, token }) {
-      console.log(`User signed out: ${session?.user?.email || 'unknown'}`)
-    },
-    async createUser({ user }) {
-      console.log(`New user created: ${user.email}`)
+      console.log(`✅ User signed out: ${session?.user?.email || 'unknown'}`)
     }
   },
   debug: process.env.NODE_ENV === "development",
@@ -283,7 +327,7 @@ async function refreshAccessToken(token: any) {
 
     return token
   } catch (error) {
-    console.error("Error refreshing access token:", error)
+    console.error("❌ Error refreshing access token:", error)
 
     return {
       ...token,
