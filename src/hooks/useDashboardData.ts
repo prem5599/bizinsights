@@ -193,7 +193,19 @@ export function useDashboardData(organizationId?: string): UseDashboardDataRetur
   const [error, setError] = useState<string | null>(null)
 
   const fetchDashboardData = useCallback(async () => {
-    if (!session?.user?.id || !organizationId) {
+    // If no session (demo mode), show sample data
+    if (!session?.user?.id) {
+      setData({
+        ...SAMPLE_DATA,
+        hasRealData: false,
+        message: 'Demo Mode - Sign up to connect real integrations'
+      })
+      setLoading(false)
+      return
+    }
+
+    // If no organization ID, can't fetch data
+    if (!organizationId) {
       setLoading(false)
       return
     }
@@ -219,30 +231,52 @@ export function useDashboardData(organizationId?: string): UseDashboardDataRetur
 
       const dashboardData = await response.json()
       
-      // Check if we have real data or should show sample data
+      // Check if we have real data
       const hasIntegrations = dashboardData.integrations?.length > 0
       const hasDataPoints = dashboardData.integrations?.some((integration: DashboardIntegration) => 
         integration.dataPointsCount > 0
       )
 
       if (hasIntegrations && hasDataPoints) {
-        // Use real data
+        // Use real data from integrations
         setData(dashboardData)
       } else if (hasIntegrations) {
-        // Has integrations but no data yet
+        // Has integrations but no data yet - show empty state
+        const emptyMetrics = {
+          revenue: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' as const },
+          orders: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' as const },
+          customers: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' as const },
+          conversionRate: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' as const },
+          averageOrderValue: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' as const },
+          sessions: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' as const }
+        }
+
         setData({
-          ...SAMPLE_DATA,
+          metrics: emptyMetrics,
           integrations: dashboardData.integrations,
+          insights: [],
           hasRealData: false,
           message: 'Integrations connected. Data will appear within 24 hours.',
-          insights: []
+          lastUpdated: new Date().toISOString()
         })
       } else {
-        // No integrations, show sample data
+        // No integrations - show empty state for authenticated users
+        const emptyMetrics = {
+          revenue: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' as const },
+          orders: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' as const },
+          customers: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' as const },
+          conversionRate: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' as const },
+          averageOrderValue: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' as const },
+          sessions: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' as const }
+        }
+
         setData({
-          ...SAMPLE_DATA,
+          metrics: emptyMetrics,
+          integrations: [],
+          insights: [],
           hasRealData: false,
-          message: 'Connect your first integration to see real data'
+          message: 'Connect your first integration to see real data',
+          lastUpdated: new Date().toISOString()
         })
       }
 
@@ -250,11 +284,23 @@ export function useDashboardData(organizationId?: string): UseDashboardDataRetur
       console.error('Dashboard data fetch error:', err)
       setError(err instanceof Error ? err.message : 'Failed to load dashboard data')
       
-      // Show sample data on error for demo purposes
+      // For authenticated users, show empty state on error (don't show sample data)
+      const emptyMetrics = {
+        revenue: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' as const },
+        orders: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' as const },
+        customers: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' as const },
+        conversionRate: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' as const },
+        averageOrderValue: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' as const },
+        sessions: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' as const }
+      }
+
       setData({
-        ...SAMPLE_DATA,
+        metrics: emptyMetrics,
+        integrations: [],
+        insights: [],
         hasRealData: false,
-        message: 'Unable to connect to live data. Showing sample data.'
+        message: 'Unable to load data. Please try again.',
+        lastUpdated: new Date().toISOString()
       })
     } finally {
       setLoading(false)

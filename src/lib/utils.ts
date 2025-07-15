@@ -11,6 +11,50 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
+ * String Utilities
+ */
+
+/**
+ * Generate a URL-safe slug from a string
+ */
+export function generateSlug(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '') // Remove special characters
+    .replace(/[\s_-]+/g, '-') // Replace spaces and underscores with hyphens
+    .replace(/^-+|-+$/g, '') // Remove leading/trailing hyphens
+}
+
+/**
+ * Capitalize the first letter of a string
+ */
+export function capitalize(str: string): string {
+  if (!str) return str
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase()
+}
+
+/**
+ * Truncate text to a specified length
+ */
+export function truncate(text: string, length: number = 100): string {
+  if (text.length <= length) return text
+  return text.slice(0, length).trim() + '...'
+}
+
+/**
+ * Generate initials from a name
+ */
+export function getInitials(name: string): string {
+  return name
+    .split(' ')
+    .map(part => part.charAt(0))
+    .join('')
+    .toUpperCase()
+    .slice(0, 2)
+}
+
+/**
  * Date and Time Utilities
  */
 
@@ -123,100 +167,30 @@ export function formatNumber(
   
   if (isNaN(number)) return '0'
   
-  return new Intl.NumberFormat('en-US', options).format(number)
-}
-
-/**
- * Format large numbers with abbreviations (K, M, B)
- */
-export function formatCompactNumber(num: number | string | null | undefined): string {
-  if (num === null || num === undefined || num === '') return '0'
-  
-  const number = typeof num === 'string' ? parseFloat(num) : num
-  
-  if (isNaN(number)) return '0'
-  
   return new Intl.NumberFormat('en-US', {
-    notation: 'compact',
-    maximumFractionDigits: 1,
+    maximumFractionDigits: 2,
+    ...options,
   }).format(number)
 }
 
 /**
- * Format percentage
+ * Format a number as percentage
  */
 export function formatPercentage(
-  value: number | string | null | undefined,
+  num: number | string | null | undefined,
   decimals: number = 1
 ): string {
-  if (value === null || value === undefined || value === '') return '0%'
+  if (num === null || num === undefined || num === '') return '0%'
   
-  const num = typeof value === 'string' ? parseFloat(value) : value
+  const number = typeof num === 'string' ? parseFloat(num) : num
   
-  if (isNaN(num)) return '0%'
+  if (isNaN(number)) return '0%'
   
   return new Intl.NumberFormat('en-US', {
     style: 'percent',
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
-  }).format(num / 100)
-}
-
-/**
- * String Utilities
- */
-
-/**
- * Capitalize the first letter of a string
- */
-export function capitalize(str: string | null | undefined): string {
-  if (!str) return ''
-  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase()
-}
-
-/**
- * Convert string to title case
- */
-export function toTitleCase(str: string | null | undefined): string {
-  if (!str) return ''
-  return str.replace(/\w\S*/g, (txt) => 
-    txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase()
-  )
-}
-
-/**
- * Generate a slug from a string
- */
-export function slugify(str: string): string {
-  return str
-    .toLowerCase()
-    .trim()
-    .replace(/[^\w\s-]/g, '')
-    .replace(/[\s_-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-}
-
-/**
- * Truncate text with ellipsis
- */
-export function truncate(text: string | null | undefined, length: number = 100): string {
-  if (!text) return ''
-  if (text.length <= length) return text
-  return text.slice(0, length).trim() + '...'
-}
-
-/**
- * Extract initials from a name
- */
-export function getInitials(name: string | null | undefined): string {
-  if (!name) return ''
-  
-  return name
-    .split(' ')
-    .map(word => word.charAt(0))
-    .join('')
-    .toUpperCase()
-    .slice(0, 2)
+  }).format(number / 100)
 }
 
 /**
@@ -348,46 +322,29 @@ export function getColorFromString(str: string): string {
  */
 export function calculatePercentageChange(oldValue: number, newValue: number): number {
   if (oldValue === 0) return newValue === 0 ? 0 : 100
-  return ((newValue - oldValue) / Math.abs(oldValue)) * 100
+  return ((newValue - oldValue) / oldValue) * 100
 }
 
 /**
- * Format growth indicator with proper styling classes
+ * Generate a random string (useful for IDs, tokens, etc.)
  */
-export function formatGrowth(change: number): {
-  value: string
-  color: string
-  icon: 'up' | 'down' | 'neutral'
-} {
-  const formatted = formatPercentage(Math.abs(change))
-  
-  if (change > 0) {
-    return { value: `+${formatted}`, color: 'text-green-600', icon: 'up' }
-  } else if (change < 0) {
-    return { value: `-${formatted}`, color: 'text-red-600', icon: 'down' }
-  } else {
-    return { value: formatted, color: 'text-gray-600', icon: 'neutral' }
+export function generateRandomString(length: number = 8): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+  let result = ''
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length))
   }
+  return result
 }
 
 /**
- * Generate a random ID (fallback for when crypto.randomUUID is not available)
- */
-export function generateId(prefix: string = ''): string {
-  const timestamp = Date.now().toString(36)
-  const randomPart = Math.random().toString(36).substr(2, 9)
-  return prefix ? `${prefix}-${timestamp}-${randomPart}` : `${timestamp}-${randomPart}`
-}
-
-/**
- * Debounce function for search inputs and API calls
+ * Debounce function
  */
 export function debounce<T extends (...args: any[]) => any>(
   func: T,
   wait: number
 ): (...args: Parameters<T>) => void {
   let timeout: NodeJS.Timeout
-  
   return (...args: Parameters<T>) => {
     clearTimeout(timeout)
     timeout = setTimeout(() => func(...args), wait)
@@ -395,46 +352,85 @@ export function debounce<T extends (...args: any[]) => any>(
 }
 
 /**
- * Throttle function for scroll events and frequent calls
+ * Throttle function
  */
 export function throttle<T extends (...args: any[]) => any>(
   func: T,
-  limit: number
+  wait: number
 ): (...args: Parameters<T>) => void {
   let inThrottle: boolean
-  
   return (...args: Parameters<T>) => {
     if (!inThrottle) {
       func(...args)
       inThrottle = true
-      setTimeout(() => inThrottle = false, limit)
+      setTimeout(() => (inThrottle = false), wait)
     }
   }
 }
 
 /**
- * File size formatting
- */
-export function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '0 Bytes'
-  
-  const k = 1024
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
-
-/**
- * Sleep utility for async operations
+ * Sleep/delay function
  */
 export function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 /**
- * Environment utilities
+ * File and Data Utilities
  */
-export const isDevelopment = process.env.NODE_ENV === 'development'
-export const isProduction = process.env.NODE_ENV === 'production'
-export const isBrowser = typeof window !== 'undefined'
+
+/**
+ * Convert bytes to human readable format
+ */
+export function formatBytes(bytes: number, decimals: number = 2): string {
+  if (bytes === 0) return '0 Bytes'
+  
+  const k = 1024
+  const dm = decimals < 0 ? 0 : decimals
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB']
+  
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i]
+}
+
+/**
+ * Download data as file
+ */
+export function downloadAsFile(data: string, filename: string, type: string = 'text/plain'): void {
+  const blob = new Blob([data], { type })
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  window.URL.revokeObjectURL(url)
+}
+
+/**
+ * Copy text to clipboard
+ */
+export async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch (err) {
+    // Fallback for older browsers
+    const textArea = document.createElement('textarea')
+    textArea.value = text
+    document.body.appendChild(textArea)
+    textArea.focus()
+    textArea.select()
+    
+    try {
+      document.execCommand('copy')
+      document.body.removeChild(textArea)
+      return true
+    } catch (fallbackErr) {
+      document.body.removeChild(textArea)
+      return false
+    }
+  }
+}
