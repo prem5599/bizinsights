@@ -1,36 +1,22 @@
 // src/app/api/auth/check-user/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { z } from 'zod'
 
-// Validation schema
-const checkUserSchema = z.object({
-  email: z.string().email('Invalid email address').toLowerCase()
-})
-
-export async function POST(request: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
-    const body = await request.json()
-    
-    const validation = checkUserSchema.safeParse(body)
-    if (!validation.success) {
+    const { email } = await req.json()
+
+    if (!email) {
       return NextResponse.json(
-        { error: 'Invalid email address' },
+        { error: 'Email is required' },
         { status: 400 }
       )
     }
 
-    const { email } = validation.data
-
     // Check if user exists
     const user = await prisma.user.findUnique({
-      where: { email },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        createdAt: true
-      }
+      where: { email: email.toLowerCase().trim() },
+      select: { id: true, email: true, name: true }
     })
 
     if (!user) {
@@ -43,14 +29,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       exists: true,
       user: {
+        id: user.id,
         email: user.email,
-        name: user.name,
-        createdAt: user.createdAt.toISOString()
+        name: user.name
       }
     })
 
   } catch (error) {
-    console.error('Check user API error:', error)
+    console.error('Check user error:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

@@ -21,6 +21,27 @@ export async function GET(request: NextRequest) {
 
     console.log('🏢 Fetching organizations for user:', session.user.id)
 
+    // First, ensure the user exists in the database
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id }
+    })
+
+    if (!user) {
+      console.log('👤 User not found in database, creating user record...')
+      
+      // Create user record if it doesn't exist (this can happen with NextAuth)
+      await prisma.user.create({
+        data: {
+          id: session.user.id,
+          email: session.user.email!,
+          name: session.user.name,
+          image: session.user.image
+        }
+      })
+      
+      console.log('✅ User record created successfully')
+    }
+
     // Get user's organization memberships
     const memberships = await prisma.organizationMember.findMany({
       where: {
@@ -63,46 +84,66 @@ export async function GET(request: NextRequest) {
     if (organizations.length === 0) {
       console.log('🆕 Creating default organization for user')
       
-      const defaultOrg = await prisma.organization.create({
-        data: {
-          name: session.user.name || session.user.email || 'My Organization',
-          slug: `org-${session.user.id.slice(-8)}`,
-          subscriptionTier: 'free',
-          members: {
-            create: {
-              userId: session.user.id,
-              role: 'owner'
+      try {
+        // Generate a unique slug
+        const timestamp = Date.now()
+        const userIdShort = session.user.id.slice(-6)
+        const slug = `org-${userIdShort}-${timestamp}`
+        
+        const defaultOrg = await prisma.organization.create({
+          data: {
+            name: session.user.name || session.user.email || 'My Organization',
+            slug: slug,
+            subscriptionTier: 'free',
+            members: {
+              create: {
+                userId: session.user.id,
+                role: 'owner'
+              }
+            }
+          },
+          include: {
+            _count: {
+              select: {
+                members: true,
+                integrations: true
+              }
             }
           }
-        },
-        include: {
-          _count: {
-            select: {
-              members: true,
-              integrations: true
-            }
-          }
+        })
+
+        console.log('✅ Default organization created:', defaultOrg.id)
+
+        const newOrganization = {
+          id: defaultOrg.id,
+          name: defaultOrg.name,
+          slug: defaultOrg.slug,
+          subscriptionTier: defaultOrg.subscriptionTier,
+          role: 'owner',
+          joinedAt: defaultOrg.createdAt,
+          memberCount: defaultOrg._count.members,
+          integrationCount: defaultOrg._count.integrations,
+          createdAt: defaultOrg.createdAt,
+          updatedAt: defaultOrg.updatedAt
         }
-      })
 
-      const newOrganization = {
-        id: defaultOrg.id,
-        name: defaultOrg.name,
-        slug: defaultOrg.slug,
-        subscriptionTier: defaultOrg.subscriptionTier,
-        role: 'owner',
-        joinedAt: defaultOrg.createdAt,
-        memberCount: defaultOrg._count.members,
-        integrationCount: defaultOrg._count.integrations,
-        createdAt: defaultOrg.createdAt,
-        updatedAt: defaultOrg.updatedAt
+        return NextResponse.json({
+          organizations: [newOrganization],
+          defaultOrganization: newOrganization,
+          totalCount: 1
+        })
+        
+      } catch (createError) {
+        console.error('❌ Error creating default organization:', createError)
+        
+        // If there's still an error, return empty state
+        return NextResponse.json({
+          organizations: [],
+          defaultOrganization: null,
+          totalCount: 0,
+          message: 'Please create an organization to get started'
+        })
       }
-
-      return NextResponse.json({
-        organizations: [newOrganization],
-        defaultOrganization: newOrganization,
-        totalCount: 1
-      })
     }
 
     // Return organizations with default (first/primary) organization

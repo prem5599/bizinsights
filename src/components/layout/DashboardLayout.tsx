@@ -148,7 +148,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       {/* Main content */}
       <div className="lg:pl-64 flex flex-col flex-1">
         {/* Header */}
-        <header className="sticky top-0 z-40 bg-white shadow-sm border-b border-gray-200">
+        <header className="sticky top-0 z-40 bg-white shadow-sm  border-gray-200">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="flex h-16 items-center justify-between">
               {/* Left section - Mobile menu + Search */}

@@ -35,7 +35,7 @@ if (missingEnvVars.length > 0) {
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   session: {
-    strategy: "jwt", // Use JWT strategy for better compatibility
+    strategy: "jwt", // Use JWT strategy for better stability
     maxAge: 30 * 24 * 60 * 60, // 30 days
     updateAge: 24 * 60 * 60, // 24 hours
   },
@@ -64,40 +64,31 @@ export const authOptions: NextAuthOptions = {
         },
         password: {
           label: "Password",
-          type: "password"
+          type: "password",
+          placeholder: "Your password"
         }
       },
       async authorize(credentials) {
         try {
-          console.log("🔐 Credentials provider: Starting authorization")
-          
-          // Enhanced input validation
-          if (!credentials) {
-            console.error("❌ No credentials provided")
+          if (!credentials?.email || !credentials?.password) {
+            console.log("❌ Missing credentials")
             return null
           }
 
-          if (!credentials.email || !credentials.password) {
-            console.error("❌ Missing email or password in credentials")
-            return null
-          }
-
-          // Validate and sanitize input
-          const validation = signInSchema.safeParse({
-            email: credentials.email.trim(),
-            password: credentials.password
+          // Validate input
+          const validatedFields = signInSchema.safeParse({
+            email: credentials.email,
+            password: credentials.password,
           })
 
-          if (!validation.success) {
-            console.error("❌ Invalid credentials format:", validation.error.issues)
+          if (!validatedFields.success) {
+            console.log("❌ Invalid credentials format")
             return null
           }
 
-          const { email, password } = validation.data
+          const { email, password } = validatedFields.data
 
-          console.log("🔍 Looking for user with email:", email)
-
-          // Find user in database with detailed logging
+          // Find user in database
           const user = await prisma.user.findUnique({
             where: { email: email.toLowerCase() },
             select: {
@@ -106,229 +97,156 @@ export const authOptions: NextAuthOptions = {
               name: true,
               image: true,
               password: true,
-              createdAt: true,
-            }
+            },
           })
 
-          if (!user) {
-            console.error("❌ No user found with email:", email)
+          if (!user || !user.password) {
+            console.log("❌ User not found or no password set")
             return null
           }
 
-          if (!user.password) {
-            console.error("❌ User found but no password set (may be OAuth only):", email)
+          // Verify password
+          const passwordMatch = await bcrypt.compare(password, user.password)
+          if (!passwordMatch) {
+            console.log("❌ Invalid password")
             return null
           }
 
-          console.log("✅ User found, verifying password...")
-
-          // Verify password with enhanced error handling
-          let isPasswordValid = false
-          try {
-            isPasswordValid = await bcrypt.compare(password, user.password)
-          } catch (bcryptError) {
-            console.error("❌ Password comparison failed:", bcryptError)
-            return null
-          }
-
-          if (!isPasswordValid) {
-            console.error("❌ Invalid password for user:", email)
-            return null
-          }
-
-          console.log("✅ Password verified successfully for user:", email)
-
-          // Return user object for session (exclude password)
-          const authenticatedUser = {
+          console.log("✅ Credentials authentication successful for:", user.email)
+          
+          return {
             id: user.id,
             email: user.email,
             name: user.name,
             image: user.image,
           }
-
-          console.log("✅ User authenticated successfully:", {
-            id: authenticatedUser.id,
-            email: authenticatedUser.email,
-            name: authenticatedUser.name
-          })
-
-          return authenticatedUser
-
         } catch (error) {
-          console.error("❌ Credentials authorization error:", error)
-          
-          // Handle specific database errors
-          if (error instanceof Error) {
-            if (error.message.includes('ECONNREFUSED') || error.message.includes('connect ECONNREFUSED')) {
-              console.error("Database connection refused - check if database is running")
-            } else if (error.message.includes('timeout')) {
-              console.error("Database query timeout")
-            } else if (error.message.includes('P2002')) {
-              console.error("Database constraint violation")
-            }
-          }
-          
+          console.error("❌ Credentials authentication error:", error)
           return null
         }
-      }
-    })
+      },
+    }),
   ],
   pages: {
     signIn: "/auth/signin",
     signUp: "/auth/signup",
     error: "/auth/error",
     verifyRequest: "/auth/verify-request",
-    newUser: "/dashboard"
+    newUser: "/dashboard" // Redirect new users to dashboard after signup
   },
   callbacks: {
-    async signIn({ user, account, profile }) {
+    async signIn({ user, account, profile, email, credentials }) {
+      console.log(`🔐 Sign-in attempt: ${user.email} via ${account?.provider}`)
+      
       try {
-        console.log(`🔄 Sign in callback - Provider: ${account?.provider}, User: ${user.email}`)
-        
-        // Enhanced logging for debugging
-        if (account) {
-          console.log("Account details:", {
-            provider: account.provider,
-            type: account.type,
-            providerAccountId: account.providerAccountId
-          })
-        }
-
-        // Allow OAuth sign-ins (Google)
-        if (account?.provider === "google") {
-          console.log("✅ Google OAuth sign-in allowed")
+        // For OAuth providers, ensure user exists in database
+        if (account?.provider === 'google') {
+          console.log('👤 Google OAuth sign-in, ensuring user exists in database...')
+          
+          // The PrismaAdapter will handle user creation automatically
+          // So we just need to ensure the sign-in is allowed
           return true
         }
 
-        // Allow credentials sign-ins
-        if (account?.provider === "credentials") {
-          console.log("✅ Credentials sign-in allowed")
+        // For credentials provider, user should already be validated
+        if (account?.provider === 'credentials') {
+          console.log('✅ Credentials sign-in validated')
           return true
         }
 
-        // Block unknown providers
-        console.error("❌ Sign-in denied - unsupported provider:", account?.provider)
-        return false
-
+        console.log('✅ Sign-in allowed for provider:', account?.provider)
+        return true
       } catch (error) {
-        console.error("❌ SignIn callback error:", error)
+        console.error('❌ Sign-in callback error:', error)
         return false
       }
     },
-    
     async redirect({ url, baseUrl }) {
       console.log(`🔄 Redirect callback - URL: ${url}, Base: ${baseUrl}`)
       
-      try {
-        // Handle relative URLs
-        if (url.startsWith("/")) {
-          const redirectUrl = `${baseUrl}${url}`
-          console.log("✅ Relative redirect to:", redirectUrl)
-          return redirectUrl
-        }
-        
-        // Handle same-origin URLs
-        if (new URL(url).origin === baseUrl) {
-          console.log("✅ Same origin redirect to:", url)
-          return url
-        }
-        
-        // Default fallback
-        const defaultUrl = `${baseUrl}/dashboard`
-        console.log("✅ Default redirect to:", defaultUrl)
-        return defaultUrl
-
-      } catch (error) {
-        console.error("❌ Redirect callback error:", error)
-        const fallbackUrl = `${baseUrl}/dashboard`
-        console.log("🔄 Fallback redirect to:", fallbackUrl)
-        return fallbackUrl
+      // Allows relative callback URLs
+      if (url.startsWith("/")) {
+        console.log(`✅ Relative redirect to: ${baseUrl}${url}`)
+        return `${baseUrl}${url}`
       }
-    },
-    
-    async jwt({ token, user, account }) {
-      try {
-        // Initial sign in
-        if (account && user) {
-          console.log("🎟️ Creating JWT token for user:", user.email)
-          
-          token.userId = user.id
-          token.email = user.email
-          token.name = user.name
-          token.picture = user.image
-          
-          // Add account provider info
-          token.provider = account.provider
-          token.accountType = account.type
-        }
-
-        // Subsequent requests - token already exists
-        if (token.userId) {
-          // You can add additional user data fetching here if needed
-          // For example, to get the latest user info or check if account is still active
-        }
-
-        return token
-
-      } catch (error) {
-        console.error("❌ JWT callback error:", error)
-        return token
+      
+      // Allows callback URLs on the same origin
+      if (new URL(url).origin === baseUrl) {
+        console.log(`✅ Same origin redirect to: ${url}`)
+        return url
       }
+      
+      // Default redirect
+      console.log(`✅ Default redirect to: ${baseUrl}/dashboard`)
+      return `${baseUrl}/dashboard`
     },
-    
-    async session({ session, token }) {
+    async jwt({ token, user, account, profile, isNewUser }) {
+      // Initial sign in
+      if (account && user) {
+        console.log('🎫 Creating JWT token for user:', user.email)
+        return {
+          ...token,
+          userId: user.id,
+          email: user.email,
+          name: user.name,
+          picture: user.image,
+          provider: account.provider,
+          accountType: account.type,
+        }
+      }
+
+      // Return previous token if user hasn't changed
+      return token
+    },
+    async session({ session, user, token }) {
       try {
-        // Send properties to the client
+        console.log("🎭 Session callback triggered for:", session.user?.email)
+
+        // For JWT strategy, use the token data
         if (token) {
           session.user.id = token.userId as string
-          session.user.email = token.email as string
-          session.user.name = token.name as string
-          session.user.image = token.picture as string
-
-          // Enhanced session with user organizations
-          if (token.userId) {
-            try {
-              const userWithOrgs = await prisma.user.findUnique({
-                where: { id: token.userId as string },
-                include: {
-                  organizations: {
-                    include: {
-                      organization: {
-                        select: {
-                          id: true,
-                          name: true,
-                          slug: true,
-                          subscriptionTier: true
-                        }
-                      }
-                    },
-                    orderBy: {
-                      createdAt: 'asc'
-                    }
+          console.log("✅ Session updated with user ID from token:", token.userId)
+        }
+        
+        // Try to fetch user organizations (but don't fail if it doesn't work)
+        if (session.user?.id) {
+          try {
+            const memberships = await prisma.organizationMember.findMany({
+              where: { userId: session.user.id },
+              include: {
+                organization: {
+                  select: {
+                    id: true,
+                    name: true,
+                    slug: true,
+                    subscriptionTier: true
                   }
                 }
-              })
+              },
+              orderBy: { createdAt: 'asc' }
+            })
 
-              if (userWithOrgs) {
-                // Add organizations to session
-                session.user.organizations = userWithOrgs.organizations.map(org => ({
-                  id: org.organization.id,
-                  name: org.organization.name,
-                  slug: org.organization.slug,
-                  role: org.role,
-                  subscriptionTier: org.organization.subscriptionTier
-                }))
-                
-                // Set default organization (first one or the one they last used)
-                session.user.currentOrganization = session.user.organizations[0] || null
-              }
+            if (memberships.length > 0) {
+              session.user.organizations = memberships.map(m => ({
+                id: m.organization.id,
+                name: m.organization.name,
+                slug: m.organization.slug,
+                role: m.role,
+                subscriptionTier: m.organization.subscriptionTier
+              }))
 
-            } catch (dbError) {
-              console.error("❌ Error fetching user organizations in session:", dbError)
-              // Don't fail the session, just continue without organizations
+              // Set current organization to the first one (usually the primary)
+              session.user.currentOrganization = session.user.organizations[0] || null
+            } else {
               session.user.organizations = []
               session.user.currentOrganization = null
             }
+
+          } catch (dbError) {
+            console.error("❌ Error fetching user organizations in session:", dbError)
+            // Don't fail the session, just continue without organizations
+            session.user.organizations = []
+            session.user.currentOrganization = null
           }
         }
 
@@ -348,6 +266,12 @@ export const authOptions: NextAuthOptions = {
         userId: user.id,
         provider: account?.provider
       })
+      
+      // For new Google users, we might want to trigger organization creation
+      if (isNewUser && account?.provider === 'google') {
+        console.log('🆕 New Google user signed up:', user.email)
+        // Organization will be created when they access the organizations API
+      }
     },
     async signOut({ token }) {
       console.log("📝 Sign-out event for user:", token?.email)

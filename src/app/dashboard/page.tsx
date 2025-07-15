@@ -6,6 +6,7 @@ import { useSession } from 'next-auth/react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { MetricCard } from '@/components/layout/MetricCard'
 import { InsightsList } from '@/components/dashboard/InsightsList'
+import { useDashboardData } from '@/hooks/useDashboardData'
 import { 
   DollarSign, 
   ShoppingCart, 
@@ -114,6 +115,14 @@ export default function DashboardPage() {
   const [chartView, setChartView] = useState('revenue') // revenue, traffic, products, geographic
   const [expandedChart, setExpandedChart] = useState<string | null>(null)
 
+  // Use corrected dashboard data hook
+  const { 
+    data: dashboardData, 
+    loading: dataLoading, 
+    error: dataError, 
+    refetch: refetchData 
+  } = useDashboardData(organization?.id)
+
   useEffect(() => {
     if (status === 'loading') return
     if (status === 'unauthenticated') {
@@ -138,127 +147,107 @@ export default function DashboardPage() {
       const defaultOrg = orgData.organizations?.[0]
       
       if (!defaultOrg) {
-        setData(createSampleDashboardData())
+        // Show empty state - no sample data for authenticated users
+        setData(createEmptyDashboardData())
         setError(null)
         return
       }
       
       setOrganization(defaultOrg)
-      await fetchDashboardData(defaultOrg.id)
       
     } catch (error) {
       console.error('Failed to fetch data:', error)
-      setData(createSampleDashboardData())
+      // Show empty state on error - no sample data
+      setData(createEmptyDashboardData())
     } finally {
       setLoading(false)
     }
   }
 
-  const fetchDashboardData = async (orgId: string) => {
-    try {
-      const response = await fetch(`/api/organizations/${orgId}/dashboard?range=${dateRange}`)
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch dashboard data: ${response.status}`)
+  // Convert dashboardData from hook to component format
+  useEffect(() => {
+    if (dashboardData) {
+      const convertedData: DashboardData = {
+        metrics: {
+          revenue: {
+            current: dashboardData.metrics.revenue.current,
+            previous: dashboardData.metrics.revenue.previous,
+            change: dashboardData.metrics.revenue.changePercent,
+            trend: dashboardData.metrics.revenue.trend
+          },
+          orders: {
+            current: dashboardData.metrics.orders.current,
+            previous: dashboardData.metrics.orders.previous,
+            change: dashboardData.metrics.orders.changePercent,
+            trend: dashboardData.metrics.orders.trend
+          },
+          sessions: {
+            current: dashboardData.metrics.sessions.current,
+            previous: dashboardData.metrics.sessions.previous,
+            change: dashboardData.metrics.sessions.changePercent,
+            trend: dashboardData.metrics.sessions.trend
+          },
+          customers: {
+            current: dashboardData.metrics.customers.current,
+            previous: dashboardData.metrics.customers.previous,
+            change: dashboardData.metrics.customers.changePercent,
+            trend: dashboardData.metrics.customers.trend
+          },
+          conversion: {
+            current: dashboardData.metrics.conversionRate.current,
+            previous: dashboardData.metrics.conversionRate.previous,
+            change: dashboardData.metrics.conversionRate.changePercent,
+            trend: dashboardData.metrics.conversionRate.trend
+          },
+          aov: {
+            current: dashboardData.metrics.averageOrderValue.current,
+            previous: dashboardData.metrics.averageOrderValue.previous,
+            change: dashboardData.metrics.averageOrderValue.changePercent,
+            trend: dashboardData.metrics.averageOrderValue.trend
+          }
+        },
+        charts: {
+          revenue_trend: [], // Empty for now - would be populated from real data
+          traffic_sources: [],
+          sales_by_hour: [],
+          top_products: [],
+          conversion_funnel: [],
+          geographic_sales: []
+        },
+        insights: dashboardData.insights,
+        integrations: dashboardData.integrations,
+        hasRealData: dashboardData.hasRealData,
+        message: dashboardData.message
       }
       
-      const fetchedData = await response.json()
-      setData(fetchedData)
-    } catch (error) {
-      console.error('Failed to fetch dashboard data:', error)
-      setData(createSampleDashboardData())
+      setData(convertedData)
     }
-  }
+  }, [dashboardData])
 
-  const createSampleDashboardData = (): DashboardData => {
-    // Generate sample data for the last 30 days
-    const generateDateSeries = (days: number) => {
-      const data = []
-      for (let i = days - 1; i >= 0; i--) {
-        const date = new Date()
-        date.setDate(date.getDate() - i)
-        data.push({
-          date: date.toISOString().split('T')[0],
-          revenue: Math.floor(Math.random() * 3000) + 1000,
-          orders: Math.floor(Math.random() * 50) + 10,
-          sessions: Math.floor(Math.random() * 500) + 200
-        })
-      }
-      return data
-    }
-
-    const generateHourlySales = () => {
-      return Array.from({ length: 24 }, (_, i) => ({
-        hour: i,
-        sales: Math.floor(Math.random() * 200) + 50,
-        orders: Math.floor(Math.random() * 10) + 2
-      }))
-    }
-
+  const createEmptyDashboardData = (): DashboardData => {
     return {
       metrics: {
-        revenue: { current: 45000, previous: 38000, change: 18.4, trend: 'up' },
-        orders: { current: 342, previous: 298, change: 14.8, trend: 'up' },
-        sessions: { current: 8542, previous: 7890, change: 8.3, trend: 'up' },
-        customers: { current: 156, previous: 142, change: 9.9, trend: 'up' },
-        conversion: { current: 4.0, previous: 3.8, change: 5.3, trend: 'up' },
-        aov: { current: 131.58, previous: 127.52, change: 3.2, trend: 'up' }
+        revenue: { current: 0, previous: 0, change: 0, trend: 'neutral' },
+        orders: { current: 0, previous: 0, change: 0, trend: 'neutral' },
+        sessions: { current: 0, previous: 0, change: 0, trend: 'neutral' },
+        customers: { current: 0, previous: 0, change: 0, trend: 'neutral' },
+        conversion: { current: 0, previous: 0, change: 0, trend: 'neutral' },
+        aov: { current: 0, previous: 0, change: 0, trend: 'neutral' }
       },
       charts: {
-        revenue_trend: generateDateSeries(30),
-        traffic_sources: [
-          { source: 'Organic Search', sessions: 3200, percentage: 42 },
-          { source: 'Direct', sessions: 2100, percentage: 28 },
-          { source: 'Social Media', sessions: 1800, percentage: 24 },
-          { source: 'Email', sessions: 500, percentage: 6 }
-        ],
-        sales_by_hour: generateHourlySales(),
-        top_products: [
-          { name: 'Premium Headphones', revenue: 12500, quantity: 45 },
-          { name: 'Smart Watch', revenue: 9800, quantity: 62 },
-          { name: 'Laptop Stand', revenue: 7200, quantity: 120 },
-          { name: 'Wireless Charger', revenue: 5600, quantity: 85 },
-          { name: 'Phone Case', revenue: 4200, quantity: 210 }
-        ],
-        conversion_funnel: [
-          { stage: 'Visitors', count: 8542, percentage: 100 },
-          { stage: 'Product Views', count: 3421, percentage: 40 },
-          { stage: 'Add to Cart', count: 1368, percentage: 16 },
-          { stage: 'Checkout', count: 547, percentage: 6.4 },
-          { stage: 'Purchase', count: 342, percentage: 4.0 }
-        ],
-        geographic_sales: [
-          { region: 'United States', sales: 18500, customers: 89 },
-          { region: 'Canada', sales: 12200, customers: 45 },
-          { region: 'United Kingdom', sales: 8900, customers: 38 },
-          { region: 'Australia', sales: 5400, customers: 22 }
-        ]
+        revenue_trend: [],
+        traffic_sources: [],
+        sales_by_hour: [],
+        top_products: [],
+        conversion_funnel: [],
+        geographic_sales: []
       },
-      insights: [
-        {
-          id: 'sample-1',
-          type: 'opportunity',
-          title: 'Peak sales time identified',
-          description: 'Your sales peak between 2-4 PM. Consider running targeted campaigns during this window.',
-          impactScore: 8.5,
-          isRead: false,
-          createdAt: new Date().toISOString()
-        },
-        {
-          id: 'sample-2',
-          type: 'alert',
-          title: 'Mobile conversion down 12%',
-          description: 'Mobile users are converting less this week. Check your mobile checkout flow.',
-          impactScore: 7.2,
-          isRead: false,
-          createdAt: new Date(Date.now() - 86400000).toISOString()
-        }
-      ],
+      insights: [],
       integrations: [],
       hasRealData: false,
       message: organization ? 
         'Connect integrations to see real data' : 
-        'Sample dashboard data'
+        'Create an organization to get started'
     }
   }
 
@@ -275,7 +264,7 @@ export default function DashboardPage() {
       })
       
       if (response.ok) {
-        await fetchDashboardData(organization.id)
+        refetchData()
       }
     } catch (error) {
       console.error('Failed to refresh insights:', error)
@@ -500,14 +489,14 @@ export default function DashboardPage() {
               <Info className="h-5 w-5 text-blue-400" />
               <div className="ml-3">
                 <h3 className="text-sm font-medium text-blue-800">
-                  Sample Data Display
+                  Empty Dashboard
                 </h3>
                 <div className="mt-2 text-sm text-blue-700">
                   <p>
-                    You're viewing sample data. 
+                    Connect integrations to populate your dashboard with real business data.
                     <a href="/dashboard/integrations" className="font-medium underline hover:text-blue-600 ml-1">
-                      Connect integrations
-                    </a> to see your real business metrics.
+                      Get started
+                    </a>
                   </p>
                 </div>
               </div>
@@ -582,7 +571,7 @@ export default function DashboardPage() {
         )}
 
         {/* Charts Section */}
-        {data && (
+        {data && data.hasRealData ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Revenue Trend Chart */}
             <div className="bg-white p-6 rounded-lg border border-slate-200">
@@ -708,10 +697,34 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Empty Charts */}
+            {[
+              { title: 'Revenue Trend', desc: 'Revenue and orders over time' },
+              { title: 'Traffic Sources', desc: 'Where your visitors come from' },
+              { title: 'Sales by Hour', desc: 'Peak sales times' },
+              { title: 'Top Products', desc: 'Best performing products' }
+            ].map((chart) => (
+              <div key={chart.title} className="bg-white p-6 rounded-lg border border-slate-200">
+                <div className="mb-4">
+                  <h3 className="text-lg font-semibold text-slate-900">{chart.title}</h3>
+                  <p className="text-sm text-slate-600">{chart.desc}</p>
+                </div>
+                <div className="h-64 flex items-center justify-center text-gray-500">
+                  <div className="text-center">
+                    <BarChart3 className="h-12 w-12 mx-auto text-gray-300 mb-2" />
+                    <p className="text-sm">No data available</p>
+                    <p className="text-xs text-gray-400">Connect integrations to see charts</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
 
         {/* Conversion Funnel */}
-        {data && (
+        {data && data.hasRealData && (
           <div className="bg-white p-6 rounded-lg border border-slate-200">
             <div className="flex items-center justify-between mb-6">
               <div>
