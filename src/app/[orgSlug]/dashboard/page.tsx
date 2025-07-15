@@ -14,10 +14,6 @@ import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { 
   BarChart3,
   RefreshCw,
-  Calendar,
-  Filter,
-  Download,
-  Settings,
   Plus,
   AlertCircle,
   CheckCircle,
@@ -48,10 +44,10 @@ export default function DashboardPage() {
   const params = useParams()
   const router = useRouter()
   const [organization, setOrganization] = useState<Organization | null>(null)
-  const [orgLoading, setOrgLoading] = useState(true)
-  const [selectedPeriod, setSelectedPeriod] = useState('30d')
+  const [orgLoading, setOrgLoading] = useState<boolean>(true)
+  const [selectedPeriod, setSelectedPeriod] = useState<string>('30d')
 
-  const orgSlug = params.orgSlug as string
+  const orgSlug = params?.orgSlug as string
 
   // Use auth guard for protected actions
   const { requireAuth, AuthPopup } = useAuthGuard({
@@ -70,7 +66,7 @@ export default function DashboardPage() {
 
   // Fetch organization data (only for authenticated users)
   useEffect(() => {
-    const fetchOrganization = async () => {
+    const fetchOrganization = async (): Promise<void> => {
       if (!session?.user?.id || !orgSlug) {
         setOrgLoading(false)
         return
@@ -79,7 +75,6 @@ export default function DashboardPage() {
       try {
         setOrgLoading(true)
         
-        // First try to find organization by slug
         const response = await fetch(`/api/organizations/by-slug/${orgSlug}`, {
           method: 'GET',
           headers: {
@@ -91,7 +86,6 @@ export default function DashboardPage() {
           const orgData = await response.json()
           setOrganization(orgData)
         } else if (response.status === 404) {
-          // Organization not found or user doesn't have access
           router.push('/organizations')
         } else {
           throw new Error('Failed to load organization')
@@ -108,16 +102,13 @@ export default function DashboardPage() {
   }, [session?.user?.id, orgSlug, router])
 
   // Handle period changes
-  const handlePeriodChange = (period: string) => {
+  const handlePeriodChange = (period: string): void => {
     setSelectedPeriod(period)
-    // Optionally refetch data with new period
-    // This would require updating the hook to accept period parameter
   }
 
   // Handle integration refresh
-  const handleRefreshIntegration = async (integrationId: string) => {
+  const handleRefreshIntegration = async (integrationId: string): Promise<void> => {
     const success = requireAuth(() => {
-      // Only execute if authenticated
       fetch(`/api/integrations/${integrationId}/sync`, {
         method: 'POST',
       }).then(response => {
@@ -130,25 +121,24 @@ export default function DashboardPage() {
     })
 
     if (!success) {
-      // Show popup to sign up
       return
     }
   }
 
   // Navigation handlers with auth guards
-  const handleManageIntegrations = () => {
+  const handleManageIntegrations = (): void => {
     requireAuth(() => {
       router.push(`/${orgSlug}/integrations`)
     })
   }
 
-  const handleViewAllInsights = () => {
+  const handleViewAllInsights = (): void => {
     requireAuth(() => {
       router.push(`/${orgSlug}/insights`)
     })
   }
 
-  const handleViewReports = () => {
+  const handleViewReports = (): void => {
     requireAuth(() => {
       router.push(`/${orgSlug}/reports`)
     })
@@ -200,161 +190,167 @@ export default function DashboardPage() {
 
   // For demo mode (no authentication), show sample data
   if (!session?.user?.id) {
-    return (
-      <DashboardLayout>
-        <div className="space-y-6 sm:space-y-8">
-          
-          {/* Demo Mode Banner */}
-          <div className="rounded-lg bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 p-4">
-            <div className="flex items-center space-x-3">
-              <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
-              <div>
-                <p className="text-sm font-medium text-blue-800">
-                  Demo Mode - Experience BizInsights
-                </p>
-                <p className="text-xs text-blue-600">
-                  You're viewing sample data. Sign up to connect your real business tools and get actual insights.
-                </p>
-              </div>
-              <button
-                onClick={() => requireAuth()}
-                className="ml-auto px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Sign Up Free
-              </button>
-            </div>
-          </div>
-
-          {/* Page Header */}
-          <div className="border-b border-gray-200 pb-4 sm:pb-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
-                  Dashboard
-                </h1>
-                <p className="mt-2 text-sm text-gray-600">
-                  Experience powerful business analytics with sample data
-                  <span className="ml-2 text-gray-400">• Demo Mode</span>
-                </p>
+    if (orgSlug === 'demo') {
+      return (
+        <DashboardLayout>
+          <div className="space-y-6 sm:space-y-8">
+            
+            {/* Demo Mode Banner */}
+            <div className="rounded-lg bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 p-4">
+              <div className="flex items-center space-x-3">
+                <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                <div>
+                  <p className="text-sm font-medium text-blue-800">
+                    Demo Mode - Experience BizInsights
+                  </p>
+                  <p className="text-xs text-blue-600">
+                    You're viewing sample data. Sign up to connect your real business tools and get actual insights.
+                  </p>
+                </div>
+                <button
+                  onClick={() => requireAuth()}
+                  className="ml-auto px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Sign Up Free
+                </button>
               </div>
             </div>
-          </div>
 
-          {/* Show sample dashboard with demo data */}
-          <MetricsCards 
-            data={{
-              revenue: { current: 45670.89, previous: 38920.45, change: 6750.44, changePercent: 17.3, trend: 'up' },
-              orders: { current: 342, previous: 289, change: 53, changePercent: 18.3, trend: 'up' },
-              customers: { current: 234, previous: 198, change: 36, changePercent: 18.2, trend: 'up' },
-              conversionRate: { current: 3.42, previous: 3.18, change: 0.24, changePercent: 7.5, trend: 'up' },
-              averageOrderValue: { current: 133.45, previous: 134.71, change: -1.26, changePercent: -0.9, trend: 'down' },
-              sessions: { current: 9998, previous: 9087, change: 911, changePercent: 10.0, trend: 'up' }
-            }}
-            loading={false}
-            period="30 days"
-          />
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 space-y-6">
-              <RevenueChart 
-                data={[]}
-                loading={false}
-                period="30d"
-                showComparison={true}
-              />
-
-              {/* Demo Integration Status */}
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Sample Integrations</h3>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg">
-                    <div className="flex items-center space-x-3">
-                      <div className="p-1.5 bg-green-100 rounded-md">
-                        <CheckCircle className="h-4 w-4 text-green-600" />
-                      </div>
-                      <div>
-                        <span className="text-sm font-medium text-gray-900">Shopify (Demo)</span>
-                        <div className="text-xs text-gray-500">Sample e-commerce data</div>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => requireAuth()}
-                      className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-                    >
-                      Connect Real Store
-                    </button>
-                  </div>
-                  
-                  <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                    <div className="flex items-center space-x-3">
-                      <div className="p-1.5 bg-blue-100 rounded-md">
-                        <BarChart3 className="h-4 w-4 text-blue-600" />
-                      </div>
-                      <div>
-                        <span className="text-sm font-medium text-gray-900">Analytics (Demo)</span>
-                        <div className="text-xs text-gray-500">Sample traffic data</div>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => requireAuth()}
-                      className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-                    >
-                      Connect Real Analytics
-                    </button>
-                  </div>
+            {/* Page Header */}
+            <div className="border-b border-gray-200 pb-4 sm:pb-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
+                <div>
+                  <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
+                    Dashboard
+                  </h1>
+                  <p className="mt-2 text-sm text-gray-600">
+                    Experience powerful business analytics with sample data
+                    <span className="ml-2 text-gray-400">• Demo Mode</span>
+                  </p>
                 </div>
               </div>
             </div>
 
-            <div className="space-y-6">
-              <InsightsPanel
-                insights={[
-                  {
-                    id: 'demo-1',
-                    type: 'trend',
-                    title: 'Revenue growth accelerating',
-                    description: 'Your revenue has increased by 17.3% compared to last month, outpacing your average growth rate.',
-                    impactScore: 8,
-                    isRead: false,
-                    createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-                    metadata: { category: 'revenue', period: '30d' }
-                  },
-                  {
-                    id: 'demo-2',
-                    type: 'recommendation',
-                    title: 'Optimize conversion rate',
-                    description: 'Consider implementing exit-intent popups. Similar stores see 15% conversion increase.',
-                    impactScore: 6,
-                    isRead: false,
-                    createdAt: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
-                    metadata: { category: 'optimization', type: 'conversion' }
-                  }
-                ]}
-                loading={false}
-                onMarkAsRead={() => requireAuth()}
-                onViewAll={() => requireAuth()}
-              />
+            {/* Show sample dashboard with demo data */}
+            <MetricsCards 
+              data={{
+                revenue: { current: 45670.89, previous: 38920.45, change: 6750.44, changePercent: 17.3, trend: 'up' },
+                orders: { current: 342, previous: 289, change: 53, changePercent: 18.3, trend: 'up' },
+                customers: { current: 234, previous: 198, change: 36, changePercent: 18.2, trend: 'up' },
+                conversionRate: { current: 3.42, previous: 3.18, change: 0.24, changePercent: 7.5, trend: 'up' },
+                averageOrderValue: { current: 133.45, previous: 134.71, change: -1.26, changePercent: -0.9, trend: 'down' },
+                sessions: { current: 9998, previous: 9087, change: 911, changePercent: 10.0, trend: 'up' }
+              }}
+              loading={false}
+              period="30 days"
+            />
 
-              {/* Call to Action */}
-              <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg p-6 text-white">
-                <h3 className="text-lg font-semibold mb-2">Ready for Real Data?</h3>
-                <p className="text-blue-100 text-sm mb-4">
-                  Connect your business tools and get real insights, automated reports, and AI-powered recommendations.
-                </p>
-                <button
-                  onClick={() => requireAuth()}
-                  className="w-full bg-white text-blue-600 font-medium py-2 px-4 rounded-lg hover:bg-blue-50 transition-colors"
-                >
-                  Start Free Trial
-                </button>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 space-y-6">
+                <RevenueChart 
+                  data={[]}
+                  loading={false}
+                  period="30d"
+                  showComparison={true}
+                />
+
+                {/* Demo Integration Status */}
+                <div className="bg-white rounded-lg border border-gray-200 p-6">
+                  <h3 className="text-lg font-medium text-gray-900 mb-4">Sample Integrations</h3>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg">
+                      <div className="flex items-center space-x-3">
+                        <div className="p-1.5 bg-green-100 rounded-md">
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                        </div>
+                        <div>
+                          <span className="text-sm font-medium text-gray-900">Shopify (Demo)</span>
+                          <div className="text-xs text-gray-500">Sample e-commerce data</div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => requireAuth()}
+                        className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                      >
+                        Connect Real Store
+                      </button>
+                    </div>
+                    
+                    <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <div className="flex items-center space-x-3">
+                        <div className="p-1.5 bg-blue-100 rounded-md">
+                          <BarChart3 className="h-4 w-4 text-blue-600" />
+                        </div>
+                        <div>
+                          <span className="text-sm font-medium text-gray-900">Analytics (Demo)</span>
+                          <div className="text-xs text-gray-500">Sample traffic data</div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => requireAuth()}
+                        className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                      >
+                        Connect Real Analytics
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <InsightsPanel
+                  insights={[
+                    {
+                      id: 'demo-1',
+                      type: 'trend',
+                      title: 'Revenue growth accelerating',
+                      description: 'Your revenue has increased by 17.3% compared to last month, outpacing your average growth rate.',
+                      impactScore: 8,
+                      isRead: false,
+                      createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+                      metadata: { category: 'revenue', period: '30d' }
+                    },
+                    {
+                      id: 'demo-2',
+                      type: 'recommendation',
+                      title: 'Optimize conversion rate',
+                      description: 'Consider implementing exit-intent popups. Similar stores see 15% conversion increase.',
+                      impactScore: 6,
+                      isRead: false,
+                      createdAt: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
+                      metadata: { category: 'optimization', type: 'conversion' }
+                    }
+                  ]}
+                  loading={false}
+                  onMarkAsRead={() => requireAuth()}
+                  onViewAll={() => requireAuth()}
+                />
+
+                {/* Call to Action */}
+                <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg p-6 text-white">
+                  <h3 className="text-lg font-semibold mb-2">Ready for Real Data?</h3>
+                  <p className="text-blue-100 text-sm mb-4">
+                    Connect your business tools and get real insights, automated reports, and AI-powered recommendations.
+                  </p>
+                  <button
+                    onClick={() => requireAuth()}
+                    className="w-full bg-white text-blue-600 font-medium py-2 px-4 rounded-lg hover:bg-blue-50 transition-colors"
+                  >
+                    Start Free Trial
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
 
-          <AuthPopup />
-        </div>
-      </DashboardLayout>
-    )
+            <AuthPopup />
+          </div>
+        </DashboardLayout>
+      )
+    } else {
+      // This is an organization route but user is not authenticated
+      router.push('/auth/signin')
+      return <div>Redirecting...</div>
+    }
   }
 
   if (orgLoading) {
@@ -366,7 +362,7 @@ export default function DashboardPage() {
             <div className="h-4 bg-gray-200 rounded w-96"></div>
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-            {[...Array(6)].map((_, i) => (
+            {Array.from({ length: 6 }, (_, i) => (
               <div key={i} className="h-32 bg-gray-200 rounded animate-pulse"></div>
             ))}
           </div>
@@ -386,7 +382,7 @@ export default function DashboardPage() {
                 Organization not found
               </h3>
               <div className="mt-2 text-sm text-red-700">
-                <p>The organization you're looking for doesn't exist or you don't have access to it.</p>
+                <p>The organization you&apos;re looking for doesn&apos;t exist or you don&apos;t have access to it.</p>
               </div>
               <div className="mt-4">
                 <button
@@ -526,7 +522,7 @@ export default function DashboardPage() {
               <div className="lg:col-span-2 space-y-6">
                 {/* Revenue Chart */}
                 <RevenueChart 
-                  data={[]} // Would be populated from dashboard data
+                  data={[]}
                   loading={dataLoading}
                   period={selectedPeriod}
                   showComparison={true}

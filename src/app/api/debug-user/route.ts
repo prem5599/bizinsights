@@ -9,56 +9,56 @@ export async function GET(req: NextRequest) {
     const session = await getServerSession(authOptions)
     
     if (!session?.user?.id) {
-      return NextResponse.json({
+      return NextResponse.json({ 
         error: 'No session found',
-        hasSession: false
+        hasSession: false 
       })
     }
 
-    console.log('🔍 Debugging user state for:', session.user.id)
-
-    // Check if user exists in database
-    const dbUser = await prisma.user.findUnique({
+    // Get user with organizations
+    const user = await prisma.user.findUnique({
       where: { id: session.user.id },
       include: {
         organizations: {
           include: {
-            organization: true
+            organization: {
+              include: {
+                integrations: {
+                  include: {
+                    _count: {
+                      select: {
+                        dataPoints: true
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
     })
 
-    // Get all users in database
-    const allUsers = await prisma.user.findMany({
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        createdAt: true
-      }
-    })
+    if (!user) {
+      return NextResponse.json({
+        error: 'User not found in database',
+        sessionUserId: session.user.id
+      })
+    }
 
-    // Get all organizations
-    const allOrgs = await prisma.organization.findMany({
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        createdAt: true
-      }
-    })
-
-    // Get all memberships
-    const allMemberships = await prisma.organizationMember.findMany({
-      select: {
-        id: true,
-        userId: true,
-        organizationId: true,
-        role: true,
-        createdAt: true
-      }
-    })
+    // Check if user has any organizations
+    const organizations = user.organizations.map(membership => ({
+      id: membership.organization.id,
+      name: membership.organization.name,
+      slug: membership.organization.slug,
+      role: membership.role,
+      integrations: membership.organization.integrations.map(integration => ({
+        id: integration.id,
+        platform: integration.platform,
+        status: integration.status,
+        dataPointsCount: integration._count.dataPoints
+      }))
+    }))
 
     return NextResponse.json({
       session: {
@@ -66,20 +66,19 @@ export async function GET(req: NextRequest) {
         userEmail: session.user.email,
         userName: session.user.name
       },
-      database: {
-        userExists: !!dbUser,
-        userDetails: dbUser ? {
-          id: dbUser.id,
-          email: dbUser.email,
-          name: dbUser.name,
-          organizationCount: dbUser.organizations.length
-        } : null,
-        totalUsers: allUsers.length,
-        totalOrganizations: allOrgs.length,
-        totalMemberships: allMemberships.length,
-        allUsers: allUsers,
-        allOrganizations: allOrgs,
-        allMemberships: allMemberships
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        createdAt: user.createdAt
+      },
+      organizations,
+      summary: {
+        hasOrganizations: organizations.length > 0,
+        totalIntegrations: organizations.reduce((sum, org) => sum + org.integrations.length, 0),
+        totalDataPoints: organizations.reduce((sum, org) => 
+          sum + org.integrations.reduce((intSum, int) => intSum + int.dataPointsCount, 0), 0
+        )
       }
     })
 
