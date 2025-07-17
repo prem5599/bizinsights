@@ -1,125 +1,13 @@
 // __mocks__/prisma.js
 import { jest } from '@jest/globals'
 
-// Mock database records
-const mockUsers = [
-  {
-    id: 'user-1',
-    email: 'test@example.com',
-    name: 'Test User',
-    image: null,
-    createdAt: new Date('2024-01-01'),
-    updatedAt: new Date('2024-01-01'),
-  },
-  {
-    id: 'user-2',
-    email: 'admin@example.com',
-    name: 'Admin User',
-    image: null,
-    createdAt: new Date('2024-01-01'),
-    updatedAt: new Date('2024-01-01'),
-  },
-]
-
-const mockOrganizations = [
-  {
-    id: 'org-1',
-    name: 'Test Organization',
-    slug: 'test-org',
-    subscriptionTier: 'free',
-    createdAt: new Date('2024-01-01'),
-    updatedAt: new Date('2024-01-01'),
-  },
-  {
-    id: 'org-2',
-    name: 'Premium Organization',
-    slug: 'premium-org',
-    subscriptionTier: 'premium',
-    createdAt: new Date('2024-01-01'),
-    updatedAt: new Date('2024-01-01'),
-  },
-]
-
-const mockIntegrations = [
-  {
-    id: 'integration-1',
-    organizationId: 'org-1',
-    platform: 'shopify',
-    platformAccountId: 'test-shop',
-    accessToken: 'mock-token',
-    refreshToken: null,
-    tokenExpiresAt: null,
-    status: 'active',
-    lastSyncAt: new Date('2024-01-01'),
-    createdAt: new Date('2024-01-01'),
-    updatedAt: new Date('2024-01-01'),
-  },
-  {
-    id: 'integration-2',
-    organizationId: 'org-1',
-    platform: 'stripe',
-    platformAccountId: 'acct_test',
-    accessToken: 'sk_test_mock',
-    refreshToken: null,
-    tokenExpiresAt: null,
-    status: 'active',
-    lastSyncAt: new Date('2024-01-01'),
-    createdAt: new Date('2024-01-01'),
-    updatedAt: new Date('2024-01-01'),
-  },
-]
-
-const mockDataPoints = [
-  {
-    id: 'dp-1',
-    integrationId: 'integration-1',
-    metricType: 'revenue',
-    value: 1000.00,
-    metadata: { orderId: 'order-1', currency: 'USD' },
-    dateRecorded: new Date('2024-01-01'),
-    createdAt: new Date('2024-01-01'),
-  },
-  {
-    id: 'dp-2',
-    integrationId: 'integration-1',
-    metricType: 'orders',
-    value: 1,
-    metadata: { orderId: 'order-1' },
-    dateRecorded: new Date('2024-01-01'),
-    createdAt: new Date('2024-01-01'),
-  },
-]
-
-const mockInsights = [
-  {
-    id: 'insight-1',
-    organizationId: 'org-1',
-    type: 'trend',
-    title: 'Revenue Growth',
-    description: 'Revenue increased by 25% this month',
-    impactScore: 85,
-    isRead: false,
-    metadata: {},
-    createdAt: new Date('2024-01-01'),
-  },
-]
-
-const mockOrganizationMembers = [
-  {
-    id: 'member-1',
-    organizationId: 'org-1',
-    userId: 'user-1',
-    role: 'owner',
-    createdAt: new Date('2024-01-01'),
-  },
-  {
-    id: 'member-2',
-    organizationId: 'org-1',
-    userId: 'user-2',
-    role: 'admin',
-    createdAt: new Date('2024-01-01'),
-  },
-]
+// Minimal mock database records for testing
+const mockUsers = []
+const mockOrganizations = []
+const mockIntegrations = []
+const mockDataPoints = []
+const mockInsights = []
+const mockOrganizationMembers = []
 
 // Helper functions for mock operations
 const findById = (array, id) => array.find(item => item.id === id) || null
@@ -137,70 +25,48 @@ const applyWhere = (array, where) => {
         if (value.not) return item[key] !== value.not
         if (value.gte) return item[key] >= value.gte
         if (value.lte) return item[key] <= value.lte
-        if (value.gt) return item[key] > value.gt
-        if (value.lt) return item[key] < value.lt
-        if (value.contains) return item[key]?.includes(value.contains)
-        if (value.startsWith) return item[key]?.startsWith(value.startsWith)
-        if (value.endsWith) return item[key]?.endsWith(value.endsWith)
-        return true
       }
       return item[key] === value
     })
   })
 }
 
-const applyInclude = (item, include, mockData) => {
-  if (!include || !item) return item
+const applyInclude = (item, include) => {
+  if (!include) return item
   
   const result = { ...item }
   
-  Object.entries(include).forEach(([relation, options]) => {
-    switch (relation) {
-      case 'organization':
-        result.organization = findById(mockOrganizations, item.organizationId)
-        break
-      case 'user':
-        result.user = findById(mockUsers, item.userId)
-        break
-      case 'integrations':
-        result.integrations = findManyByField(mockIntegrations, 'organizationId', item.id)
-        break
-      case 'members':
-        result.members = findManyByField(mockOrganizationMembers, 'organizationId', item.id)
-        if (options?.include?.user) {
-          result.members = result.members.map(member => ({
-            ...member,
-            user: findById(mockUsers, member.userId)
-          }))
-        }
-        break
-      case 'dataPoints':
-        result.dataPoints = findManyByField(mockDataPoints, 'integrationId', item.id)
-        if (options?.take) {
-          result.dataPoints = result.dataPoints.slice(0, options.take)
-        }
-        break
+  Object.entries(include).forEach(([key, shouldInclude]) => {
+    if (shouldInclude) {
+      switch (key) {
+        case 'organization':
+          result.organization = findById(mockOrganizations, item.organizationId)
+          break
+        case 'user':
+          result.user = findById(mockUsers, item.userId)
+          break
+        case 'integration':
+          result.integration = findById(mockIntegrations, item.integrationId)
+          break
+        default:
+          result[key] = []
+      }
     }
   })
   
   return result
 }
 
-// Create mock Prisma client
+// Mock Prisma client factory
 const createMockPrismaClient = () => ({
-  // User model
+  // User operations
   user: {
-    findUnique: jest.fn(({ where }) => {
-      const user = where.id ? findById(mockUsers, where.id) : findByField(mockUsers, 'email', where.email)
-      return Promise.resolve(user)
+    findUnique: jest.fn(({ where, include }) => {
+      const user = findById(mockUsers, where.id) || findByField(mockUsers, 'email', where.email)
+      return Promise.resolve(user ? applyInclude(user, include) : null)
     }),
     
-    findFirst: jest.fn(({ where }) => {
-      const filtered = applyWhere(mockUsers, where)
-      return Promise.resolve(filtered[0] || null)
-    }),
-    
-    findMany: jest.fn(({ where, include, take, skip, orderBy }) => {
+    findMany: jest.fn(({ where, include, orderBy, skip, take }) => {
       let filtered = applyWhere(mockUsers, where)
       
       if (orderBy) {
@@ -208,8 +74,8 @@ const createMockPrismaClient = () => ({
         filtered.sort((a, b) => {
           const aVal = a[field]
           const bVal = b[field]
-          if (direction === 'desc') return bVal > aVal ? 1 : -1
-          return aVal > bVal ? 1 : -1
+          if (direction === 'asc') return aVal < bVal ? -1 : aVal > bVal ? 1 : 0
+          return aVal > bVal ? -1 : aVal < bVal ? 1 : 0
         })
       }
       
@@ -252,20 +118,14 @@ const createMockPrismaClient = () => ({
     }),
   },
 
-  // Organization model
+  // Organization operations
   organization: {
     findUnique: jest.fn(({ where, include }) => {
-      const org = where.id ? findById(mockOrganizations, where.id) : findByField(mockOrganizations, 'slug', where.slug)
-      return Promise.resolve(applyInclude(org, include))
+      const org = findById(mockOrganizations, where.id) || findByField(mockOrganizations, 'slug', where.slug)
+      return Promise.resolve(org ? applyInclude(org, include) : null)
     }),
     
-    findFirst: jest.fn(({ where, include }) => {
-      const filtered = applyWhere(mockOrganizations, where)
-      const result = filtered[0] || null
-      return Promise.resolve(applyInclude(result, include))
-    }),
-    
-    findMany: jest.fn(({ where, include, take, skip, orderBy }) => {
+    findMany: jest.fn(({ where, include, orderBy, skip, take }) => {
       let filtered = applyWhere(mockOrganizations, where)
       
       if (orderBy) {
@@ -273,8 +133,8 @@ const createMockPrismaClient = () => ({
         filtered.sort((a, b) => {
           const aVal = a[field]
           const bVal = b[field]
-          if (direction === 'desc') return bVal > aVal ? 1 : -1
-          return aVal > bVal ? 1 : -1
+          if (direction === 'asc') return aVal < bVal ? -1 : aVal > bVal ? 1 : 0
+          return aVal > bVal ? -1 : aVal < bVal ? 1 : 0
         })
       }
       
@@ -317,83 +177,20 @@ const createMockPrismaClient = () => ({
     }),
   },
 
-  // OrganizationMember model
-  organizationMember: {
-    findUnique: jest.fn(({ where, include }) => {
-      const member = findById(mockOrganizationMembers, where.id)
-      return Promise.resolve(applyInclude(member, include))
-    }),
-    
-    findFirst: jest.fn(({ where, include }) => {
-      const filtered = applyWhere(mockOrganizationMembers, where)
-      const result = filtered[0] || null
-      return Promise.resolve(applyInclude(result, include))
-    }),
-    
-    findMany: jest.fn(({ where, include, take, skip, orderBy }) => {
-      let filtered = applyWhere(mockOrganizationMembers, where)
-      
-      if (orderBy) {
-        const [field, direction] = Object.entries(orderBy)[0]
-        filtered.sort((a, b) => {
-          const aVal = a[field]
-          const bVal = b[field]
-          if (direction === 'desc') return bVal > aVal ? 1 : -1
-          return aVal > bVal ? 1 : -1
-        })
-      }
-      
-      if (skip) filtered = filtered.slice(skip)
-      if (take) filtered = filtered.slice(0, take)
-      
-      const result = filtered.map(item => applyInclude(item, include))
-      return Promise.resolve(result)
-    }),
-    
-    create: jest.fn(({ data, include }) => {
-      const newMember = {
-        id: `member-${Date.now()}`,
-        ...data,
-        createdAt: new Date(),
-      }
-      mockOrganizationMembers.push(newMember)
-      return Promise.resolve(applyInclude(newMember, include))
-    }),
-    
-    update: jest.fn(({ where, data, include }) => {
-      const index = mockOrganizationMembers.findIndex(member => member.id === where.id)
-      if (index === -1) throw new Error('Organization member not found')
-      
-      mockOrganizationMembers[index] = {
-        ...mockOrganizationMembers[index],
-        ...data,
-      }
-      return Promise.resolve(applyInclude(mockOrganizationMembers[index], include))
-    }),
-    
-    delete: jest.fn(({ where }) => {
-      const index = mockOrganizationMembers.findIndex(member => member.id === where.id)
-      if (index === -1) throw new Error('Organization member not found')
-      
-      const deleted = mockOrganizationMembers.splice(index, 1)[0]
-      return Promise.resolve(deleted)
-    }),
-  },
-
-  // Integration model
+  // Integration operations
   integration: {
     findUnique: jest.fn(({ where, include }) => {
       const integration = findById(mockIntegrations, where.id)
-      return Promise.resolve(applyInclude(integration, include))
+      return Promise.resolve(integration ? applyInclude(integration, include) : null)
     }),
     
     findFirst: jest.fn(({ where, include }) => {
       const filtered = applyWhere(mockIntegrations, where)
-      const result = filtered[0] || null
-      return Promise.resolve(applyInclude(result, include))
+      const integration = filtered[0] || null
+      return Promise.resolve(integration ? applyInclude(integration, include) : null)
     }),
     
-    findMany: jest.fn(({ where, include, take, skip, orderBy }) => {
+    findMany: jest.fn(({ where, include, orderBy, skip, take }) => {
       let filtered = applyWhere(mockIntegrations, where)
       
       if (orderBy) {
@@ -401,8 +198,8 @@ const createMockPrismaClient = () => ({
         filtered.sort((a, b) => {
           const aVal = a[field]
           const bVal = b[field]
-          if (direction === 'desc') return bVal > aVal ? 1 : -1
-          return aVal > bVal ? 1 : -1
+          if (direction === 'asc') return aVal < bVal ? -1 : aVal > bVal ? 1 : 0
+          return aVal > bVal ? -1 : aVal < bVal ? 1 : 0
         })
       }
       
@@ -445,20 +242,67 @@ const createMockPrismaClient = () => ({
     }),
   },
 
-  // DataPoint model
-  dataPoint: {
-    findUnique: jest.fn(({ where, include }) => {
-      const dataPoint = findById(mockDataPoints, where.id)
-      return Promise.resolve(applyInclude(dataPoint, include))
-    }),
-    
+  // OrganizationMember operations
+  organizationMember: {
     findFirst: jest.fn(({ where, include }) => {
-      const filtered = applyWhere(mockDataPoints, where)
-      const result = filtered[0] || null
-      return Promise.resolve(applyInclude(result, include))
+      const filtered = applyWhere(mockOrganizationMembers, where)
+      const member = filtered[0] || null
+      return Promise.resolve(member ? applyInclude(member, include) : null)
     }),
     
-    findMany: jest.fn(({ where, include, take, skip, orderBy }) => {
+    findMany: jest.fn(({ where, include, orderBy, skip, take }) => {
+      let filtered = applyWhere(mockOrganizationMembers, where)
+      
+      if (orderBy) {
+        const [field, direction] = Object.entries(orderBy)[0]
+        filtered.sort((a, b) => {
+          const aVal = a[field]
+          const bVal = b[field]
+          if (direction === 'asc') return aVal < bVal ? -1 : aVal > bVal ? 1 : 0
+          return aVal > bVal ? -1 : aVal < bVal ? 1 : 0
+        })
+      }
+      
+      if (skip) filtered = filtered.slice(skip)
+      if (take) filtered = filtered.slice(0, take)
+      
+      const result = filtered.map(item => applyInclude(item, include))
+      return Promise.resolve(result)
+    }),
+    
+    create: jest.fn(({ data, include }) => {
+      const newMember = {
+        id: `member-${Date.now()}`,
+        ...data,
+        createdAt: new Date(),
+      }
+      mockOrganizationMembers.push(newMember)
+      return Promise.resolve(applyInclude(newMember, include))
+    }),
+    
+    update: jest.fn(({ where, data, include }) => {
+      const index = mockOrganizationMembers.findIndex(member => member.id === where.id)
+      if (index === -1) throw new Error('Member not found')
+      
+      mockOrganizationMembers[index] = {
+        ...mockOrganizationMembers[index],
+        ...data,
+      }
+      return Promise.resolve(applyInclude(mockOrganizationMembers[index], include))
+    }),
+    
+    delete: jest.fn(({ where }) => {
+      const index = mockOrganizationMembers.findIndex(member => member.id === where.id)
+      if (index === -1) throw new Error('Member not found')
+      
+      const deleted = mockOrganizationMembers.splice(index, 1)[0]
+      return Promise.resolve(deleted)
+    }),
+  },
+
+  // DataPoint operations
+  dataPoint: {
+    findMany: jest.fn(({ where, include, orderBy, skip, take }) => {
       let filtered = applyWhere(mockDataPoints, where)
       
       if (orderBy) {
@@ -466,8 +310,8 @@ const createMockPrismaClient = () => ({
         filtered.sort((a, b) => {
           const aVal = a[field]
           const bVal = b[field]
-          if (direction === 'desc') return bVal > aVal ? 1 : -1
-          return aVal > bVal ? 1 : -1
+          if (direction === 'asc') return aVal < bVal ? -1 : aVal > bVal ? 1 : 0
+          return aVal > bVal ? -1 : aVal < bVal ? 1 : 0
         })
       }
       
@@ -513,6 +357,20 @@ const createMockPrismaClient = () => ({
       }
     }),
     
+    deleteMany: jest.fn(({ where }) => {
+      const filtered = applyWhere(mockDataPoints, where)
+      const deletedCount = filtered.length
+      
+      filtered.forEach(dataPoint => {
+        const index = mockDataPoints.findIndex(dp => dp.id === dataPoint.id)
+        if (index !== -1) {
+          mockDataPoints.splice(index, 1)
+        }
+      })
+      
+      return Promise.resolve({ count: deletedCount })
+    }),
+    
     updateMany: jest.fn(({ where, data }) => {
       const filtered = applyWhere(mockDataPoints, where)
       let updateCount = 0
@@ -541,85 +399,23 @@ const createMockPrismaClient = () => ({
       const groups = {}
       
       filtered.forEach(item => {
-        const key = by.map(field => item[field]).join('-')
-        if (!groups[key]) {
-          groups[key] = {
-            ...by.reduce((acc, field) => ({ ...acc, [field]: item[field] }), {}),
-            items: []
-          }
+        const groupKey = by.map(field => item[field]).join('|')
+        if (!groups[groupKey]) {
+          const groupData = {}
+          by.forEach(field => {
+            groupData[field] = item[field]
+          })
+          groups[groupKey] = groupData
         }
-        groups[key].items.push(item)
       })
       
-      const result = Object.values(groups).map(group => {
-        const groupResult = { ...group }
-        delete groupResult.items
-        
-        if (_count) {
-          groupResult._count = {}
-          Object.keys(_count).forEach(field => {
-            groupResult._count[field] = group.items.length
-          })
-        }
-        
-        if (_sum) {
-          groupResult._sum = {}
-          Object.keys(_sum).forEach(field => {
-            groupResult._sum[field] = group.items.reduce((sum, item) => sum + (Number(item[field]) || 0), 0)
-          })
-        }
-        
-        if (_avg) {
-          groupResult._avg = {}
-          Object.keys(_avg).forEach(field => {
-            const sum = group.items.reduce((sum, item) => sum + (Number(item[field]) || 0), 0)
-            groupResult._avg[field] = group.items.length > 0 ? sum / group.items.length : 0
-          })
-        }
-        
-        if (_min) {
-          groupResult._min = {}
-          Object.keys(_min).forEach(field => {
-            groupResult._min[field] = Math.min(...group.items.map(item => Number(item[field]) || 0))
-          })
-        }
-        
-        if (_max) {
-          groupResult._max = {}
-          Object.keys(_max).forEach(field => {
-            groupResult._max[field] = Math.max(...group.items.map(item => Number(item[field]) || 0))
-          })
-        }
-        
-        return groupResult
-      })
-      
-      return Promise.resolve(result)
-    }),
-    
-    delete: jest.fn(({ where }) => {
-      const index = mockDataPoints.findIndex(dp => dp.id === where.id)
-      if (index === -1) throw new Error('DataPoint not found')
-      
-      const deleted = mockDataPoints.splice(index, 1)[0]
-      return Promise.resolve(deleted)
+      return Promise.resolve(Object.values(groups))
     }),
   },
 
-  // Insight model
+  // Insight operations
   insight: {
-    findUnique: jest.fn(({ where, include }) => {
-      const insight = findById(mockInsights, where.id)
-      return Promise.resolve(applyInclude(insight, include))
-    }),
-    
-    findFirst: jest.fn(({ where, include }) => {
-      const filtered = applyWhere(mockInsights, where)
-      const result = filtered[0] || null
-      return Promise.resolve(applyInclude(result, include))
-    }),
-    
-    findMany: jest.fn(({ where, include, take, skip, orderBy }) => {
+    findMany: jest.fn(({ where, include, orderBy, skip, take }) => {
       let filtered = applyWhere(mockInsights, where)
       
       if (orderBy) {
@@ -627,8 +423,8 @@ const createMockPrismaClient = () => ({
         filtered.sort((a, b) => {
           const aVal = a[field]
           const bVal = b[field]
-          if (direction === 'desc') return bVal > aVal ? 1 : -1
-          return aVal > bVal ? 1 : -1
+          if (direction === 'asc') return aVal < bVal ? -1 : aVal > bVal ? 1 : 0
+          return aVal > bVal ? -1 : aVal < bVal ? 1 : 0
         })
       }
       
@@ -649,6 +445,17 @@ const createMockPrismaClient = () => ({
       return Promise.resolve(applyInclude(newInsight, include))
     }),
     
+    createMany: jest.fn(({ data }) => {
+      const newInsights = data.map((item, index) => ({
+        id: `insight-${Date.now()}-${index}`,
+        ...item,
+        createdAt: new Date(),
+      }))
+      
+      mockInsights.push(...newInsights)
+      return Promise.resolve({ count: newInsights.length })
+    }),
+    
     update: jest.fn(({ where, data, include }) => {
       const index = mockInsights.findIndex(insight => insight.id === where.id)
       if (index === -1) throw new Error('Insight not found')
@@ -666,6 +473,20 @@ const createMockPrismaClient = () => ({
       
       const deleted = mockInsights.splice(index, 1)[0]
       return Promise.resolve(deleted)
+    }),
+    
+    deleteMany: jest.fn(({ where }) => {
+      const filtered = applyWhere(mockInsights, where)
+      const deletedCount = filtered.length
+      
+      filtered.forEach(insight => {
+        const index = mockInsights.findIndex(i => i.id === insight.id)
+        if (index !== -1) {
+          mockInsights.splice(index, 1)
+        }
+      })
+      
+      return Promise.resolve({ count: deletedCount })
     }),
   },
 
@@ -690,56 +511,10 @@ const createMockPrismaClient = () => ({
   
   // Reset function for tests
   $reset: jest.fn(() => {
-    // Reset all mock data to initial state
+    // Reset all mock data to initial empty state
     mockUsers.length = 0
-    mockUsers.push(
-      {
-        id: 'user-1',
-        email: 'test@example.com',
-        name: 'Test User',
-        image: null,
-        createdAt: new Date('2024-01-01'),
-        updatedAt: new Date('2024-01-01'),
-      },
-      {
-        id: 'user-2',
-        email: 'admin@example.com',
-        name: 'Admin User',
-        image: null,
-        createdAt: new Date('2024-01-01'),
-        updatedAt: new Date('2024-01-01'),
-      }
-    )
-    
     mockOrganizations.length = 0
-    mockOrganizations.push(
-      {
-        id: 'org-1',
-        name: 'Test Organization',
-        slug: 'test-org',
-        subscriptionTier: 'free',
-        createdAt: new Date('2024-01-01'),
-        updatedAt: new Date('2024-01-01'),
-      }
-    )
-    
     mockIntegrations.length = 0
-    mockIntegrations.push(
-      {
-        id: 'integration-1',
-        organizationId: 'org-1',
-        platform: 'shopify',
-        platformAccountId: 'test-shop',
-        accessToken: 'mock-token',
-        refreshToken: null,
-        tokenExpiresAt: null,
-        status: 'active',
-        lastSyncAt: new Date('2024-01-01'),
-        createdAt: new Date('2024-01-01'),
-        updatedAt: new Date('2024-01-01'),
-      }
-    )
-    
     mockDataPoints.length = 0
     mockInsights.length = 0
     mockOrganizationMembers.length = 0

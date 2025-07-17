@@ -15,13 +15,12 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
-    "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "db:reset": "prisma db push --force-reset && npm run db:seed",
-        "db:reset-full": "npm run reset-db && npm run db:push",
+    "db:reset": "prisma db push --force-reset",
+    "db:reset-full": "npm run reset-db && npm run db:push",
     "db:clean": "tsx scripts/reset-database.ts",
     "db:fresh": "tsx scripts/reset-database.ts && npm run db:push",
-    "db:setup": "npm run db:push && npm run db:seed",
+    "db:setup": "npm run db:push",
     "docker:build": "docker build -t bizinsights .",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
@@ -82,9 +81,6 @@
     "typescript": "^5.7.2",
     "@emotion/jest": "^11.11.0",
     "identity-obj-proxy": "^3.0.0"
-  },
-  "prisma": {
-    "seed": "tsx prisma/seed.ts"
   },
   "engines": {
     "node": ">=18.0.0",

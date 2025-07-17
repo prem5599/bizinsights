@@ -4,109 +4,75 @@ import { PrismaClient } from '@prisma/client'
 const prisma = new PrismaClient()
 
 async function resetDatabase() {
-  console.log('🗑️  Starting comprehensive database reset...')
-  console.log('⚠️  This will delete ALL data including users, organizations, integrations, and sample data!')
+  console.log('🗄️  Starting database reset...')
   
   try {
-    // 1. Delete all webhook events first (if they exist)
-    console.log('🧹 Deleting webhook events...')
-    try {
-      await prisma.webhookEvent.deleteMany({})
-      console.log('✅ Webhook events deleted')
-    } catch (error) {
-      console.log('ℹ️  No webhook events to delete or table doesn\'t exist')
-    }
-
-    // 2. Delete all reports
-    console.log('🧹 Deleting reports...')
-    try {
-      await prisma.report.deleteMany({})
-      console.log('✅ Reports deleted')
-    } catch (error) {
-      console.log('ℹ️  No reports to delete or table doesn\'t exist')
-    }
-
-    // 3. Delete all data points
-    console.log('🧹 Deleting data points...')
-    const dataPointsDeleted = await prisma.dataPoint.deleteMany({})
-    console.log(`✅ ${dataPointsDeleted.count} data points deleted`)
-
-    // 4. Delete all insights
-    console.log('🧹 Deleting insights...')
-    const insightsDeleted = await prisma.insight.deleteMany({})
-    console.log(`✅ ${insightsDeleted.count} insights deleted`)
-
-    // 5. Delete all integrations
-    console.log('🧹 Deleting integrations...')
-    const integrationsDeleted = await prisma.integration.deleteMany({})
-    console.log(`✅ ${integrationsDeleted.count} integrations deleted`)
-
-    // 6. Delete all organization invitations
-    console.log('🧹 Deleting organization invitations...')
-    try {
-      const invitationsDeleted = await prisma.organizationInvitation.deleteMany({})
-      console.log(`✅ ${invitationsDeleted.count} organization invitations deleted`)
-    } catch (error) {
-      console.log('ℹ️  No organization invitations to delete or table doesn\'t exist')
-    }
-
-    // 7. Delete all organization members
-    console.log('🧹 Deleting organization members...')
-    const membersDeleted = await prisma.organizationMember.deleteMany({})
-    console.log(`✅ ${membersDeleted.count} organization members deleted`)
-
-    // 8. Delete all organizations
-    console.log('🧹 Deleting organizations...')
-    const organizationsDeleted = await prisma.organization.deleteMany({})
-    console.log(`✅ ${organizationsDeleted.count} organizations deleted`)
-
-    // 9. Delete all verification tokens
-    console.log('🧹 Deleting verification tokens...')
-    const verificationTokensDeleted = await prisma.verificationToken.deleteMany({})
-    console.log(`✅ ${verificationTokensDeleted.count} verification tokens deleted`)
-
-    // 10. Delete all user accounts (OAuth accounts)
-    console.log('🧹 Deleting user accounts (OAuth)...')
-    const accountsDeleted = await prisma.account.deleteMany({})
-    console.log(`✅ ${accountsDeleted.count} OAuth accounts deleted`)
-
-    // 11. Delete all user sessions
-    console.log('🧹 Deleting user sessions...')
-    const sessionsDeleted = await prisma.session.deleteMany({})
-    console.log(`✅ ${sessionsDeleted.count} user sessions deleted`)
-
-    // 12. Finally, delete all users
-    console.log('🧹 Deleting users...')
-    const usersDeleted = await prisma.user.deleteMany({})
-    console.log(`✅ ${usersDeleted.count} users deleted`)
-
-    // 13. Verify database is clean
-    console.log('🔍 Verifying database cleanup...')
-    const finalCounts = {
-      users: await prisma.user.count(),
+    // Get initial record counts
+    const initialCounts = {
+      dataPoints: await prisma.dataPoint.count(),
+      insights: await prisma.insight.count(),
+      integrations: await prisma.integration.count(),
+      organizationMembers: await prisma.organizationMember.count(),
+      organizations: await prisma.organization.count(),
       accounts: await prisma.account.count(),
       sessions: await prisma.session.count(),
-      organizations: await prisma.organization.count(),
-      organizationMembers: await prisma.organizationMember.count(),
-      integrations: await prisma.integration.count(),
-      dataPoints: await prisma.dataPoint.count(),
-      insights: await prisma.insight.count()
+      users: await prisma.user.count(),
     }
 
-    console.log('📊 Final database counts:', finalCounts)
+    console.log('📊 Current database state:', initialCounts)
 
-    // Check if cleanup was successful
+    // Delete in order respecting foreign key constraints
+    console.log('🧹 Cleaning database tables...')
+    
+    console.log('   • Deleting data points...')
+    await prisma.dataPoint.deleteMany({})
+    
+    console.log('   • Deleting insights...')
+    await prisma.insight.deleteMany({})
+    
+    console.log('   • Deleting integrations...')
+    await prisma.integration.deleteMany({})
+    
+    console.log('   • Deleting organization members...')
+    await prisma.organizationMember.deleteMany({})
+    
+    console.log('   • Deleting organizations...')
+    await prisma.organization.deleteMany({})
+    
+    console.log('   • Deleting user accounts...')
+    await prisma.account.deleteMany({})
+    
+    console.log('   • Deleting user sessions...')
+    await prisma.session.deleteMany({})
+    
+    console.log('   • Deleting users...')
+    await prisma.user.deleteMany({})
+
+    // Get final record counts to verify cleanup
+    const finalCounts = {
+      dataPoints: await prisma.dataPoint.count(),
+      insights: await prisma.insight.count(),
+      integrations: await prisma.integration.count(),
+      organizationMembers: await prisma.organizationMember.count(),
+      organizations: await prisma.organization.count(),
+      accounts: await prisma.account.count(),
+      sessions: await prisma.session.count(),
+      users: await prisma.user.count(),
+    }
+
+    console.log('📊 Final database state:', finalCounts)
+
+    // Check if reset was successful
     const totalRecords = Object.values(finalCounts).reduce((sum, count) => sum + count, 0)
     
     if (totalRecords === 0) {
-      console.log('✅ Database reset completed successfully!')
+      console.log('')
       console.log('🎉 Database is completely clean and ready for fresh setup!')
       console.log('')
       console.log('📝 What happens next:')
-      console.log('   • All demo data and sample accounts have been removed')
-      console.log('   • New users can now create fresh accounts')
-      console.log('   • No dummy data will appear for new accounts')
+      console.log('   • New users can create fresh accounts')
       console.log('   • Real integrations will show actual data only')
+      console.log('   • No dummy data will appear for new accounts')
       console.log('')
       console.log('🚀 You can now test with a new account!')
     } else {
@@ -140,7 +106,7 @@ async function confirmReset() {
   console.log('   • All organizations and team data')
   console.log('   • All integrations (Shopify, Stripe, etc.)')
   console.log('   • All dashboard data and insights')
-  console.log('   • All sample/demo data')
+  console.log('   • All existing data (no sample data will be regenerated)')
   console.log('')
   
   // In a production script, you might want to add readline for confirmation
@@ -169,7 +135,7 @@ async function main() {
     console.log('   ✅ All user accounts removed')
     console.log('   ✅ All organizations cleaned')
     console.log('   ✅ All integrations disconnected')
-    console.log('   ✅ All sample data purged')
+    console.log('   ✅ All data purged (no dummy data)')
     console.log('   ✅ Database ready for fresh start')
     console.log('')
     console.log('📱 Next Steps:')

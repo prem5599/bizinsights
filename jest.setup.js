@@ -1,52 +1,68 @@
 // jest.setup.js
 import '@testing-library/jest-dom'
-import { configure } from '@testing-library/react'
-import { setLogger } from 'react-query'
 
-// Configure React Testing Library
-configure({
-  // Increase timeout for async operations
-  asyncUtilTimeout: 5000,
-  
-  // Custom test ID attribute
-  testIdAttribute: 'data-testid',
-  
-  // Disable automatic cleanup (we'll handle it manually)
-  asyncWrapper: async (cb) => {
-    let result
-    await cb(() => {
-      result = cb()
-    })
-    return result
-  }
-})
+// Mock Next.js router
+jest.mock('next/router', () => ({
+  useRouter() {
+    return {
+      route: '/',
+      pathname: '/',
+      query: {},
+      asPath: '/',
+      push: jest.fn(),
+      pop: jest.fn(),
+      reload: jest.fn(),
+      back: jest.fn(),
+      prefetch: jest.fn().mockResolvedValue(undefined),
+      beforePopState: jest.fn(),
+      events: {
+        on: jest.fn(),
+        off: jest.fn(),
+        emit: jest.fn(),
+      },
+      isFallback: false,
+    }
+  },
+}))
 
-// Suppress React Query errors in tests
-setLogger({
-  log: console.log,
-  warn: console.warn,
-  error: () => {}, // Suppress error logs
-})
+// Mock Next.js navigation
+jest.mock('next/navigation', () => ({
+  useRouter() {
+    return {
+      push: jest.fn(),
+      replace: jest.fn(),
+      prefetch: jest.fn(),
+      back: jest.fn(),
+      forward: jest.fn(),
+      refresh: jest.fn(),
+    }
+  },
+  useSearchParams() {
+    return new URLSearchParams()
+  },
+  usePathname() {
+    return '/'
+  },
+}))
 
-// Mock IntersectionObserver
-global.IntersectionObserver = class IntersectionObserver {
-  constructor() {}
-  disconnect() {}
-  observe() {}
-  unobserve() {}
-}
+// Mock NextAuth
+jest.mock('next-auth', () => ({
+  getServerSession: jest.fn(),
+}))
 
-// Mock ResizeObserver
-global.ResizeObserver = class ResizeObserver {
-  constructor(cb) {
-    this.cb = cb
-  }
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-}
+jest.mock('next-auth/react', () => ({
+  useSession: jest.fn(() => ({
+    data: null,
+    status: 'unauthenticated',
+    update: jest.fn(),
+  })),
+  signIn: jest.fn(),
+  signOut: jest.fn(),
+  getSession: jest.fn(),
+  SessionProvider: ({ children }) => children,
+}))
 
-// Mock matchMedia
+// Mock window.matchMedia
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
   value: jest.fn().mockImplementation(query => ({
@@ -61,30 +77,35 @@ Object.defineProperty(window, 'matchMedia', {
   })),
 })
 
-// Mock window.location
-Object.defineProperty(window, 'location', {
-  value: {
-    href: 'http://localhost:3000',
-    hostname: 'localhost',
-    port: '3000',
-    protocol: 'http:',
-    pathname: '/',
-    search: '',
-    hash: '',
-    assign: jest.fn(),
-    replace: jest.fn(),
-    reload: jest.fn(),
-  },
-  writable: true,
-})
+// Mock IntersectionObserver
+global.IntersectionObserver = class IntersectionObserver {
+  constructor() {}
+  observe() {
+    return null
+  }
+  disconnect() {
+    return null
+  }
+  unobserve() {
+    return null
+  }
+}
 
-// Mock window.scrollTo
-Object.defineProperty(window, 'scrollTo', {
-  value: jest.fn(),
-  writable: true,
-})
+// Mock ResizeObserver
+global.ResizeObserver = class ResizeObserver {
+  constructor() {}
+  observe() {
+    return null
+  }
+  disconnect() {
+    return null
+  }
+  unobserve() {
+    return null
+  }
+}
 
-// Mock fetch globally
+// Mock fetch
 global.fetch = jest.fn(() =>
   Promise.resolve({
     ok: true,
@@ -163,207 +184,29 @@ global.testUtils = {
     ...overrides,
   }),
 
-  // Helper to create mock dashboard data
-  createMockDashboardData: (overrides = {}) => ({
-    metrics: {
-      revenue: { current: 10000, previous: 8000, change: 25, trend: 'up' },
-      orders: { current: 150, previous: 120, change: 25, trend: 'up' },
-      sessions: { current: 5000, previous: 4500, change: 11.1, trend: 'up' },
-      customers: { current: 75, previous: 60, change: 25, trend: 'up' },
-      conversion: { current: 3.0, previous: 2.7, change: 11.1, trend: 'up' },
-      aov: { current: 66.67, previous: 66.67, change: 0, trend: 'neutral' },
-    },
-    charts: {
-      revenue_trend: [
-        { date: '2024-01-01', total_revenue: 1000 },
-        { date: '2024-01-02', total_revenue: 1200 },
-        { date: '2024-01-03', total_revenue: 1100 },
-      ],
-      traffic_sources: [
-        { source: 'Direct', sessions: 2000, percentage: 40 },
-        { source: 'Google', sessions: 1500, percentage: 30 },
-        { source: 'Social', sessions: 1000, percentage: 20 },
-        { source: 'Email', sessions: 500, percentage: 10 },
-      ],
-    },
-    insights: [
-      {
-        id: 'test-insight-1',
-        type: 'trend',
-        title: 'Revenue Growth',
-        description: 'Revenue increased by 25% this month',
-        impactScore: 85,
-        isRead: false,
-        createdAt: new Date().toISOString(),
-      },
-    ],
-    integrations: [
-      {
-        id: 'test-integration-1',
-        platform: 'shopify',
-        status: 'connected',
-        lastSyncAt: new Date().toISOString(),
-      },
-    ],
-    hasRealData: false,
+  // Helper to create mock data point
+  createMockDataPoint: (overrides = {}) => ({
+    id: 'test-dp-id',
+    integrationId: 'test-integration-id',
+    metricType: 'revenue',
+    value: 100.0,
+    metadata: {},
+    dateRecorded: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
     ...overrides,
   }),
 
-  // Helper to wait for async operations
-  waitFor: (ms = 100) => new Promise(resolve => setTimeout(resolve, ms)),
-
-  // Helper to simulate user events
-  fireEvent: async (element, event, options = {}) => {
-    const { fireEvent } = await import('@testing-library/react')
-    return fireEvent[event](element, options)
-  },
-
-  // Helper to render components with providers
-  renderWithProviders: async (ui, options = {}) => {
-    const { render } = await import('@testing-library/react')
-    const { SessionProvider } = await import('next-auth/react')
-    const { QueryClient, QueryClientProvider } = await import('react-query')
-    
-    const queryClient = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false },
-        mutations: { retry: false },
-      },
-    })
-
-    const AllTheProviders = ({ children }) => {
-      return (
-        <QueryClientProvider client={queryClient}>
-          <SessionProvider session={options.session}>
-            {children}
-          </SessionProvider>
-        </QueryClientProvider>
-      )
-    }
-
-    return render(ui, { wrapper: AllTheProviders, ...options })
-  },
+  // Helper to create mock insight
+  createMockInsight: (overrides = {}) => ({
+    id: 'test-insight-id',
+    organizationId: 'test-org-id',
+    type: 'trend',
+    title: 'Test Insight',
+    description: 'Test insight description',
+    impactScore: 75,
+    isRead: false,
+    metadata: {},
+    createdAt: new Date().toISOString(),
+    ...overrides,
+  }),
 }
-
-// Custom Jest matchers
-expect.extend({
-  toBeWithinRange(received, floor, ceiling) {
-    const pass = received >= floor && received <= ceiling
-    if (pass) {
-      return {
-        message: () =>
-          `expected ${received} not to be within range ${floor} - ${ceiling}`,
-        pass: true,
-      }
-    } else {
-      return {
-        message: () =>
-          `expected ${received} to be within range ${floor} - ${ceiling}`,
-        pass: false,
-      }
-    }
-  },
-
-  toHaveValidMetrics(received) {
-    const requiredMetrics = ['revenue', 'orders', 'sessions', 'customers', 'conversion', 'aov']
-    const hasAllMetrics = requiredMetrics.every(metric => 
-      received.metrics && 
-      received.metrics[metric] && 
-      typeof received.metrics[metric].current === 'number'
-    )
-
-    if (hasAllMetrics) {
-      return {
-        message: () => `expected metrics to be invalid`,
-        pass: true,
-      }
-    } else {
-      return {
-        message: () => `expected metrics to have all required fields: ${requiredMetrics.join(', ')}`,
-        pass: false,
-      }
-    }
-  },
-
-  toBeValidApiResponse(received) {
-    const isValid = received && 
-      typeof received === 'object' && 
-      !received.error &&
-      received.success !== false
-
-    if (isValid) {
-      return {
-        message: () => `expected API response to be invalid`,
-        pass: true,
-      }
-    } else {
-      return {
-        message: () => `expected valid API response, got: ${JSON.stringify(received)}`,
-        pass: false,
-      }
-    }
-  },
-})
-
-// Global error handler for unhandled promise rejections
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason)
-})
-
-// Suppress specific console warnings in tests
-const originalError = console.error
-beforeAll(() => {
-  console.error = (...args) => {
-    if (
-      typeof args[0] === 'string' &&
-      (args[0].includes('Warning: ReactDOM.render is deprecated') ||
-       args[0].includes('Warning: Each child in a list should have a unique "key" prop') ||
-       args[0].includes('Warning: Failed prop type'))
-    ) {
-      return
-    }
-    originalError.call(console, ...args)
-  }
-})
-
-afterAll(() => {
-  console.error = originalError
-})
-
-// Clean up after each test
-afterEach(() => {
-  // Clear all mocks
-  jest.clearAllMocks()
-  
-  // Reset fetch mock
-  if (global.fetch && global.fetch.mockClear) {
-    global.fetch.mockClear()
-  }
-  
-  // Clean up DOM
-  document.body.innerHTML = ''
-  
-  // Reset any global state
-  delete window.location
-  Object.defineProperty(window, 'location', {
-    value: {
-      href: 'http://localhost:3000',
-      hostname: 'localhost',
-      port: '3000',
-      protocol: 'http:',
-      pathname: '/',
-      search: '',
-      hash: '',
-      assign: jest.fn(),
-      replace: jest.fn(),
-      reload: jest.fn(),
-    },
-    writable: true,
-  })
-})
-
-// Global setup for all tests
-beforeAll(() => {
-  // Set up global test environment
-  console.log('🧪 Jest test environment initialized')
-})
