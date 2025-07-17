@@ -1,8 +1,9 @@
-// src/components/layout/MetricCard.tsx
+// src/components/layout/MetricCardWithContext.tsx
 'use client'
 
 import { LucideIcon, TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useCurrencyFormatter } from '@/contexts/CurrencyContext'
 
 interface MetricCardProps {
   title: string
@@ -31,23 +32,13 @@ export function MetricCard({
   prefix,
   suffix
 }: MetricCardProps) {
+  const { formatMetric, currency } = useCurrencyFormatter()
   
   const formatValue = (val: number | string, format: string): string => {
     if (typeof val === 'string') return val
     
-    switch (format) {
-      case 'currency':
-        return new Intl.NumberFormat('en-US', {
-          style: 'currency',
-          currency: 'USD',
-          minimumFractionDigits: val % 1 === 0 ? 0 : 2
-        }).format(val)
-      case 'percentage':
-        return `${val.toFixed(1)}%`
-      case 'number':
-      default:
-        return new Intl.NumberFormat('en-US').format(val)
-    }
+    // Use the context-aware formatter
+    return formatMetric(val, format as 'currency' | 'number' | 'percentage')
   }
 
   const formatChange = (change: number): string => {
@@ -61,9 +52,8 @@ export function MetricCard({
         return <TrendingUp className="h-4 w-4 text-green-500" />
       case 'down':
         return <TrendingDown className="h-4 w-4 text-red-500" />
-      case 'neutral':
       default:
-        return <Minus className="h-4 w-4 text-gray-500" />
+        return <Minus className="h-4 w-4 text-gray-400" />
     }
   }
 
@@ -73,78 +63,63 @@ export function MetricCard({
         return 'text-green-600'
       case 'down':
         return 'text-red-600'
-      case 'neutral':
       default:
-        return 'text-gray-600'
+        return 'text-gray-500'
     }
   }
 
   if (isLoading) {
     return (
-      <div className={cn(
-        "bg-white rounded-lg border border-gray-200 p-6 shadow-sm",
-        className
-      )}>
-        <div className="animate-pulse">
-          <div className="flex items-center justify-between mb-4">
-            <div className="h-4 bg-gray-200 rounded w-20"></div>
-            <div className="h-6 w-6 bg-gray-200 rounded"></div>
-          </div>
-          <div className="h-8 bg-gray-200 rounded w-24 mb-2"></div>
-          <div className="h-4 bg-gray-200 rounded w-16"></div>
+      <div className={cn("bg-white rounded-lg shadow border p-6 animate-pulse", className)}>
+        <div className="flex items-center justify-between mb-4">
+          <div className="h-4 bg-gray-200 rounded w-20"></div>
+          <div className="h-4 w-4 bg-gray-200 rounded"></div>
         </div>
+        <div className="h-8 bg-gray-200 rounded w-24 mb-2"></div>
+        <div className="h-4 bg-gray-200 rounded w-16"></div>
       </div>
     )
   }
 
   return (
     <div className={cn(
-      "bg-white rounded-lg border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow duration-200",
+      "bg-white rounded-lg shadow border p-6 hover:shadow-md transition-shadow",
       className
     )}>
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-medium text-gray-600 truncate">
-          {title}
-        </h3>
-        {Icon && (
-          <div className="flex-shrink-0">
-            <Icon className="h-5 w-5 text-gray-400" />
-          </div>
-        )}
+        <h3 className="text-sm font-medium text-gray-600">{title}</h3>
+        {Icon && <Icon className="h-4 w-4 text-gray-400" />}
       </div>
 
       {/* Value */}
-      <div className="flex items-baseline space-x-2 mb-2">
-        {prefix && (
-          <span className="text-sm text-gray-500">{prefix}</span>
-        )}
-        <p className="text-2xl font-bold text-gray-900 truncate">
-          {formatValue(value, format)}
-        </p>
-        {suffix && (
-          <span className="text-sm text-gray-500">{suffix}</span>
+      <div className="mb-2">
+        <div className="text-2xl font-bold text-gray-900">
+          {prefix}{formatValue(value, format)}{suffix}
+        </div>
+        {format === 'currency' && (
+          <div className="text-xs text-gray-500 mt-1">
+            Currency: {currency}
+          </div>
         )}
       </div>
 
       {/* Change indicator */}
       {change !== undefined && (
-        <div className="flex items-center space-x-1">
-          {getTrendIcon()}
-          <span className={cn("text-sm font-medium", getTrendColor())}>
-            {formatChange(change)}
-          </span>
-          {description && (
-            <span className="text-sm text-gray-500 ml-1">
-              {description}
+        <div className="flex items-center">
+          <div className="flex items-center space-x-1">
+            {getTrendIcon()}
+            <span className={cn("text-sm font-medium", getTrendColor())}>
+              {formatChange(change)}
             </span>
-          )}
+          </div>
+          <span className="text-sm text-gray-500 ml-2">vs previous period</span>
         </div>
       )}
 
-      {/* Description without change */}
-      {change === undefined && description && (
-        <p className="text-sm text-gray-500 mt-1">{description}</p>
+      {/* Description */}
+      {description && (
+        <p className="text-xs text-gray-500 mt-2">{description}</p>
       )}
     </div>
   )

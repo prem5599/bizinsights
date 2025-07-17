@@ -1,30 +1,30 @@
 // src/app/layout.tsx
-import type { Metadata } from "next"
-import "./globals.css"
-import { AuthProvider } from "@/components/providers/AuthProvider"
-import { ClientOnly } from "@/components/providers/ClientOnly"
+import type { Metadata } from 'next'
+import { Inter } from 'next/font/google'
+import './globals.css'
+import { SessionProvider } from '@/components/providers/SessionProvider'
+import { CurrencyProvider } from '@/contexts/CurrencyContext'
+
+const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: "BizInsights - Simple Analytics Dashboard",
-  description: "Analytics dashboard for small businesses",
+  title: 'BizInsights - Business Analytics Dashboard',
+  description: 'Powerful analytics and insights for your business. Connect your integrations and get real-time data.',
 }
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode
-}>) {
+}) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body 
-        className="min-h-screen bg-slate-50 antialiased" 
-        suppressHydrationWarning
-      >
-        <ClientOnly>
-          <AuthProvider>
+    <html lang="en">
+      <body className={inter.className}>
+        <SessionProvider>
+          <CurrencyProvider>
             {children}
-          </AuthProvider>
-        </ClientOnly>
+          </CurrencyProvider>
+        </SessionProvider>
       </body>
     </html>
   )

@@ -3,227 +3,60 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { DashboardData, DashboardMetrics, DashboardIntegration, DashboardInsight } from '@/hooks/useDashboardData'
 
-interface RouteParams {
-  params: {
-    organizationId: string
-  }
+interface DashboardMetric {
+  current: number
+  previous: number
+  change: number
+  changePercent: number
+  trend: 'up' | 'down' | 'neutral'
 }
 
-// Helper function to calculate percentage change
-function calculateChange(current: number, previous: number) {
-  if (previous === 0) return { change: current, changePercent: current > 0 ? 100 : 0 }
-  const change = current - previous
-  const changePercent = (change / previous) * 100
-  return { change, changePercent }
+interface DashboardMetrics {
+  revenue: DashboardMetric
+  orders: DashboardMetric
+  customers: DashboardMetric
+  conversionRate: DashboardMetric
+  averageOrderValue: DashboardMetric
+  sessions: DashboardMetric
 }
 
-// Helper function to determine trend
-function getTrend(changePercent: number): 'up' | 'down' | 'neutral' {
-  if (changePercent > 1) return 'up'
-  if (changePercent < -1) return 'down'
-  return 'neutral'
+interface DashboardIntegration {
+  id: string
+  platform: string
+  platformAccountId: string
+  status: 'active' | 'inactive' | 'error' | 'syncing'
+  lastSyncAt: string | null
+  dataPointsCount: number
 }
 
-// Helper function to aggregate metrics from data points
-async function aggregateMetrics(organizationId: string, days: number = 30): Promise<DashboardMetrics> {
-  const endDate = new Date()
-  const startDate = new Date(endDate.getTime() - days * 24 * 60 * 60 * 1000)
-  const previousStartDate = new Date(startDate.getTime() - days * 24 * 60 * 60 * 1000)
-
-  // Get current period data points
-  const currentDataPoints = await prisma.dataPoint.findMany({
-    where: {
-      integration: {
-        organizationId
-      },
-      dateRecorded: {
-        gte: startDate,
-        lte: endDate
-      }
-    },
-    include: {
-      integration: true
-    }
-  })
-
-  // Get previous period data points for comparison
-  const previousDataPoints = await prisma.dataPoint.findMany({
-    where: {
-      integration: {
-        organizationId
-      },
-      dateRecorded: {
-        gte: previousStartDate,
-        lt: startDate
-      }
-    },
-    include: {
-      integration: true
-    }
-  })
-
-  // Aggregate current period metrics
-  const currentMetrics = {
-    revenue: 0,
-    orders: 0,
-    customers: 0,
-    sessions: 0,
-    totalOrderValue: 0,
-    orderCount: 0
-  }
-
-  const previousMetrics = {
-    revenue: 0,
-    orders: 0,
-    customers: 0,
-    sessions: 0,
-    totalOrderValue: 0,
-    orderCount: 0
-  }
-
-  // Process current period data
-  currentDataPoints.forEach(dataPoint => {
-    const value = parseFloat(dataPoint.value.toString())
-    
-    switch (dataPoint.metricType) {
-      case 'revenue':
-        currentMetrics.revenue += value
-        break
-      case 'orders':
-        currentMetrics.orders += value
-        currentMetrics.orderCount += value
-        break
-      case 'order_value':
-        currentMetrics.totalOrderValue += value
-        break
-      case 'customers':
-        currentMetrics.customers += value
-        break
-      case 'sessions':
-        currentMetrics.sessions += value
-        break
-    }
-  })
-
-  // Process previous period data
-  previousDataPoints.forEach(dataPoint => {
-    const value = parseFloat(dataPoint.value.toString())
-    
-    switch (dataPoint.metricType) {
-      case 'revenue':
-        previousMetrics.revenue += value
-        break
-      case 'orders':
-        previousMetrics.orders += value
-        previousMetrics.orderCount += value
-        break
-      case 'order_value':
-        previousMetrics.totalOrderValue += value
-        break
-      case 'customers':
-        previousMetrics.customers += value
-        break
-      case 'sessions':
-        previousMetrics.sessions += value
-        break
-    }
-  })
-
-  // Calculate derived metrics
-  const currentAOV = currentMetrics.orderCount > 0 
-    ? currentMetrics.totalOrderValue / currentMetrics.orderCount 
-    : 0
-  const previousAOV = previousMetrics.orderCount > 0 
-    ? previousMetrics.totalOrderValue / previousMetrics.orderCount 
-    : 0
-
-  const currentConversionRate = currentMetrics.sessions > 0 
-    ? (currentMetrics.orders / currentMetrics.sessions) * 100 
-    : 0
-  const previousConversionRate = previousMetrics.sessions > 0 
-    ? (previousMetrics.orders / previousMetrics.sessions) * 100 
-    : 0
-
-  // Calculate changes and trends
-  const revenueChange = calculateChange(currentMetrics.revenue, previousMetrics.revenue)
-  const ordersChange = calculateChange(currentMetrics.orders, previousMetrics.orders)
-  const customersChange = calculateChange(currentMetrics.customers, previousMetrics.customers)
-  const aovChange = calculateChange(currentAOV, previousAOV)
-  const conversionChange = calculateChange(currentConversionRate, previousConversionRate)
-  const sessionsChange = calculateChange(currentMetrics.sessions, previousMetrics.sessions)
-
-  return {
-    revenue: {
-      current: currentMetrics.revenue,
-      previous: previousMetrics.revenue,
-      change: revenueChange.change,
-      changePercent: revenueChange.changePercent,
-      trend: getTrend(revenueChange.changePercent)
-    },
-    orders: {
-      current: currentMetrics.orders,
-      previous: previousMetrics.orders,
-      change: ordersChange.change,
-      changePercent: ordersChange.changePercent,
-      trend: getTrend(ordersChange.changePercent)
-    },
-    customers: {
-      current: currentMetrics.customers,
-      previous: previousMetrics.customers,
-      change: customersChange.change,
-      changePercent: customersChange.changePercent,
-      trend: getTrend(customersChange.changePercent)
-    },
-    conversionRate: {
-      current: currentConversionRate,
-      previous: previousConversionRate,
-      change: conversionChange.change,
-      changePercent: conversionChange.changePercent,
-      trend: getTrend(conversionChange.changePercent)
-    },
-    averageOrderValue: {
-      current: currentAOV,
-      previous: previousAOV,
-      change: aovChange.change,
-      changePercent: aovChange.changePercent,
-      trend: getTrend(aovChange.changePercent)
-    },
-    sessions: {
-      current: currentMetrics.sessions,
-      previous: previousMetrics.sessions,
-      change: sessionsChange.change,
-      changePercent: sessionsChange.changePercent,
-      trend: getTrend(sessionsChange.changePercent)
-    }
-  }
+interface DashboardInsight {
+  id: string
+  type: 'trend' | 'anomaly' | 'recommendation'
+  title: string
+  description: string
+  impactScore: number
+  isRead: boolean
+  createdAt: string
+  metadata: Record<string, any>
 }
 
-// Helper function to get platform display name
-function getPlatformDisplayName(platform: string): string {
-  const platformNames: Record<string, string> = {
-    shopify: 'Shopify',
-    stripe: 'Stripe',
-    google_analytics: 'Google Analytics',
-    facebook_ads: 'Facebook Ads',
-    google_ads: 'Google Ads'
-  }
-  return platformNames[platform] || platform
-}
-
-export async function GET(req: NextRequest, { params }: RouteParams) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { organizationId: string } }
+) {
   try {
     const session = await getServerSession(authOptions)
-    
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const { organizationId } = params
+    const { searchParams } = new URL(request.url)
+    const days = parseInt(searchParams.get('days') || '30')
 
     // Verify user has access to this organization
-    const organizationMember = await prisma.organizationMember.findFirst({
+    const membership = await prisma.organizationMember.findFirst({
       where: {
         organizationId,
         userId: session.user.id
@@ -233,15 +66,14 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       }
     })
 
-    if (!organizationMember) {
-      return NextResponse.json({ error: 'Organization not found or access denied' }, { status: 404 })
+    if (!membership) {
+      return NextResponse.json(
+        { error: 'Organization not found or access denied' },
+        { status: 404 }
+      )
     }
 
-    // Get query parameters
-    const { searchParams } = new URL(req.url)
-    const days = parseInt(searchParams.get('days') || '30')
-
-    // Fetch integrations with data point counts
+    // Get integrations with data point counts
     const integrations = await prisma.integration.findMany({
       where: {
         organizationId
@@ -255,11 +87,10 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       }
     })
 
-    // Transform integrations for response
     const dashboardIntegrations: DashboardIntegration[] = integrations.map(integration => ({
       id: integration.id,
       platform: integration.platform,
-      platformAccountId: integration.platformAccountId,
+      platformAccountId: integration.platformAccountId || '',
       status: integration.status as 'active' | 'inactive' | 'error' | 'syncing',
       lastSyncAt: integration.lastSyncAt?.toISOString() || null,
       dataPointsCount: integration._count.dataPoints
@@ -270,33 +101,13 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
     let metrics: DashboardMetrics
     let insights: DashboardInsight[]
+    let chartData: any
 
     if (hasRealData) {
       // Calculate real metrics from data points
       metrics = await aggregateMetrics(organizationId, days)
-
-      // Fetch recent insights
-      const insightRecords = await prisma.insight.findMany({
-        where: {
-          organizationId
-        },
-        orderBy: {
-          createdAt: 'desc'
-        },
-        take: 10
-      })
-
-      insights = insightRecords.map(insight => ({
-        id: insight.id,
-        type: insight.type as 'trend' | 'anomaly' | 'recommendation',
-        title: insight.title,
-        description: insight.description,
-        impactScore: insight.impactScore,
-        isRead: insight.isRead,
-        createdAt: insight.createdAt.toISOString(),
-        metadata: insight.metadata as Record<string, any>
-      }))
-
+      insights = await fetchInsights(organizationId)
+      chartData = await fetchChartData(organizationId, days)
     } else {
       // Return empty metrics for no data case
       const emptyMetric = {
@@ -317,6 +128,11 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       }
 
       insights = []
+      chartData = {
+        revenue: [],
+        traffic: [],
+        products: []
+      }
     }
 
     // Determine data status message
@@ -326,16 +142,17 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     } else if (!hasRealData) {
       message = 'Integrations connected. Data will appear within 24 hours.'
     } else {
-      message = `Data from ${integrations.length} connected integration${integrations.length !== 1 ? 's' : ''}`
+      message = `Live data from ${integrations.length} connected integration${integrations.length !== 1 ? 's' : ''}`
     }
 
-    const dashboardData: DashboardData = {
+    const dashboardData = {
       metrics,
       integrations: dashboardIntegrations,
       insights,
       hasRealData,
       message,
-      lastUpdated: new Date().toISOString()
+      lastUpdated: new Date().toISOString(),
+      chartData
     }
 
     return NextResponse.json(dashboardData)
@@ -352,50 +169,210 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   }
 }
 
-// Optional: POST endpoint for refreshing dashboard data
-export async function POST(req: NextRequest, { params }: RouteParams) {
-  try {
-    const session = await getServerSession(authOptions)
-    
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+async function aggregateMetrics(organizationId: string, days: number): Promise<DashboardMetrics> {
+  const endDate = new Date()
+  const startDate = new Date(endDate.getTime() - days * 24 * 60 * 60 * 1000)
+  const previousStartDate = new Date(startDate.getTime() - days * 24 * 60 * 60 * 1000)
 
-    const { organizationId } = params
-
-    // Verify user has access to this organization
-    const organizationMember = await prisma.organizationMember.findFirst({
-      where: {
-        organizationId,
-        userId: session.user.id
-      }
-    })
-
-    if (!organizationMember) {
-      return NextResponse.json({ error: 'Organization not found or access denied' }, { status: 404 })
-    }
-
-    // TODO: Trigger data sync for all integrations
-    // This could be implemented as:
-    // 1. Queue sync jobs for all active integrations
-    // 2. Update lastSyncAt timestamps
-    // 3. Return updated data
-
-    // For now, just return success
-    return NextResponse.json({ 
-      success: true, 
-      message: 'Data refresh initiated',
-      timestamp: new Date().toISOString()
-    })
-
-  } catch (error) {
-    console.error('Dashboard refresh API error:', error)
-    return NextResponse.json(
-      { 
-        error: 'Internal server error',
-        details: error instanceof Error ? error.message : 'Unknown error'
+  // Current period data
+  const currentData = await prisma.dataPoint.groupBy({
+    by: ['metricType'],
+    where: {
+      integration: {
+        organizationId
       },
-      { status: 500 }
-    )
+      dateRecorded: {
+        gte: startDate,
+        lte: endDate
+      }
+    },
+    _sum: {
+      value: true
+    },
+    _count: {
+      id: true
+    }
+  })
+
+  // Previous period data for comparison
+  const previousData = await prisma.dataPoint.groupBy({
+    by: ['metricType'],
+    where: {
+      integration: {
+        organizationId
+      },
+      dateRecorded: {
+        gte: previousStartDate,
+        lt: startDate
+      }
+    },
+    _sum: {
+      value: true
+    },
+    _count: {
+      id: true
+    }
+  })
+
+  // Helper function to calculate metric
+  const calculateMetric = (metricType: string): DashboardMetric => {
+    const current = Number(currentData.find(d => d.metricType === metricType)?._sum.value || 0)
+    const previous = Number(previousData.find(d => d.metricType === metricType)?._sum.value || 0)
+    const change = current - previous
+    const changePercent = previous > 0 ? (change / previous) * 100 : 0
+    
+    return {
+      current,
+      previous,
+      change,
+      changePercent,
+      trend: change > 0 ? 'up' : change < 0 ? 'down' : 'neutral'
+    }
+  }
+
+  // Calculate derived metrics
+  const revenue = calculateMetric('revenue')
+  const orders = calculateMetric('orders')
+  const customers = calculateMetric('customers')
+  const sessions = calculateMetric('sessions')
+
+  // Calculate conversion rate
+  const currentConversionRate = sessions.current > 0 ? (orders.current / sessions.current) * 100 : 0
+  const previousConversionRate = sessions.previous > 0 ? (orders.previous / sessions.previous) * 100 : 0
+  const conversionChange = currentConversionRate - previousConversionRate
+
+  // Calculate average order value
+  const currentAOV = orders.current > 0 ? revenue.current / orders.current : 0
+  const previousAOV = orders.previous > 0 ? revenue.previous / orders.previous : 0
+  const aovChange = currentAOV - previousAOV
+
+  return {
+    revenue,
+    orders,
+    customers,
+    sessions,
+    conversionRate: {
+      current: currentConversionRate,
+      previous: previousConversionRate,
+      change: conversionChange,
+      changePercent: previousConversionRate > 0 ? (conversionChange / previousConversionRate) * 100 : 0,
+      trend: conversionChange > 0 ? 'up' : conversionChange < 0 ? 'down' : 'neutral'
+    },
+    averageOrderValue: {
+      current: currentAOV,
+      previous: previousAOV,
+      change: aovChange,
+      changePercent: previousAOV > 0 ? (aovChange / previousAOV) * 100 : 0,
+      trend: aovChange > 0 ? 'up' : aovChange < 0 ? 'down' : 'neutral'
+    }
+  }
+}
+
+async function fetchInsights(organizationId: string): Promise<DashboardInsight[]> {
+  const insightRecords = await prisma.insight.findMany({
+    where: {
+      organizationId
+    },
+    orderBy: {
+      createdAt: 'desc'
+    },
+    take: 10
+  })
+
+  return insightRecords.map(insight => ({
+    id: insight.id,
+    type: insight.type as 'trend' | 'anomaly' | 'recommendation',
+    title: insight.title,
+    description: insight.description,
+    impactScore: insight.impactScore,
+    isRead: insight.isRead,
+    createdAt: insight.createdAt.toISOString(),
+    metadata: insight.metadata as Record<string, any>
+  }))
+}
+
+async function fetchChartData(organizationId: string, days: number) {
+  const endDate = new Date()
+  const startDate = new Date(endDate.getTime() - days * 24 * 60 * 60 * 1000)
+
+  // Get daily revenue and orders data
+  const dailyData = await prisma.dataPoint.findMany({
+    where: {
+      integration: {
+        organizationId
+      },
+      metricType: {
+        in: ['revenue', 'orders', 'sessions']
+      },
+      dateRecorded: {
+        gte: startDate,
+        lte: endDate
+      }
+    },
+    orderBy: {
+      dateRecorded: 'asc'
+    }
+  })
+
+  // Group by date for revenue chart
+  const revenueByDate = new Map()
+  dailyData.forEach(point => {
+    const date = point.dateRecorded.toISOString().split('T')[0]
+    if (!revenueByDate.has(date)) {
+      revenueByDate.set(date, { date, revenue: 0, orders: 0, sessions: 0 })
+    }
+    const dayData = revenueByDate.get(date)
+    if (point.metricType === 'revenue') {
+      dayData.revenue += Number(point.value)
+    } else if (point.metricType === 'orders') {
+      dayData.orders += Number(point.value)
+    } else if (point.metricType === 'sessions') {
+      dayData.sessions += Number(point.value)
+    }
+  })
+
+  // Traffic sources data
+  const trafficData = await prisma.dataPoint.findMany({
+    where: {
+      integration: {
+        organizationId
+      },
+      metricType: 'sessions',
+      dateRecorded: {
+        gte: startDate,
+        lte: endDate
+      }
+    },
+    select: {
+      value: true,
+      metadata: true
+    }
+  })
+
+  // Group by traffic source
+  const trafficBySource = new Map()
+  let totalTraffic = 0
+  trafficData.forEach(point => {
+    const source = (point.metadata as any)?.source || 'Direct'
+    const sessions = Number(point.value)
+    totalTraffic += sessions
+    
+    if (!trafficBySource.has(source)) {
+      trafficBySource.set(source, 0)
+    }
+    trafficBySource.set(source, trafficBySource.get(source) + sessions)
+  })
+
+  // Convert to array with percentages
+  const trafficSources = Array.from(trafficBySource.entries()).map(([source, sessions]) => ({
+    source,
+    sessions,
+    percentage: totalTraffic > 0 ? Math.round((sessions / totalTraffic) * 100) : 0
+  }))
+
+  return {
+    revenue: Array.from(revenueByDate.values()),
+    traffic: trafficSources,
+    products: [] // TODO: Implement product data
   }
 }

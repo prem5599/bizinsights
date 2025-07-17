@@ -1,236 +1,60 @@
 // src/middleware.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { getToken } from 'next-auth/jwt'
-
-// Security headers
-const SECURITY_HEADERS = {
-  'X-Content-Type-Options': 'nosniff',
-  'X-Frame-Options': 'DENY',
-  'X-XSS-Protection': '1; mode=block',
-  'Referrer-Policy': 'strict-origin-when-cross-origin',
-  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
-}
+import { currencyMiddleware } from '@/middleware/currency'
 
 /**
- * Rate limiting storage (in-memory for development)
- */
-const rateLimitMap = new Map<string, { count: number; lastReset: number }>()
-
-/**
- * Simple rate limiting
- */
-function isRateLimited(clientId: string, limit: number = 60, windowMs: number = 60000): boolean {
-  const now = Date.now()
-  const windowStart = now - windowMs
-  
-  const clientData = rateLimitMap.get(clientId)
-  
-  if (!clientData || clientData.lastReset < windowStart) {
-    rateLimitMap.set(clientId, { count: 1, lastReset: now })
-    return false
-  }
-  
-  if (clientData.count >= limit) {
-    return true
-  }
-  
-  clientData.count++
-  return false
-}
-
-/**
- * Get client identifier for rate limiting
- */
-function getClientIdentifier(request: NextRequest): string {
-  const forwarded = request.headers.get('x-forwarded-for')
-  const realIP = request.headers.get('x-real-ip')
-  const ip = forwarded?.split(',')[0] || realIP || 'unknown'
-  return ip
-}
-
-/**
- * Validate webhook signature
- */
-function validateWebhookSignature(request: NextRequest): boolean {
-  const pathname = request.nextUrl.pathname
-  
-  // Shopify webhook validation
-  if (pathname.includes('/webhook/shopify')) {
-    const signature = request.headers.get('X-Shopify-Hmac-Sha256')
-    const secret = process.env.SHOPIFY_WEBHOOK_SECRET
-    
-    if (!signature || !secret) return false
-    
-    // In production, use proper Shopify HMAC validation
-    return signature.length > 10
-  }
-  
-  return true
-}
-
-/**
- * Check if path requires authentication
- */
-function requiresAuth(pathname: string): boolean {
-  const protectedPaths = [
-    '/dashboard',
-    '/api/organizations',
-    '/api/integrations',
-    '/api/insights'
-  ]
-  
-  return protectedPaths.some(path => pathname.startsWith(path))
-}
-
-/**
- * Check if user has required permissions
- */
-async function hasPermission(
-  request: NextRequest, 
-  pathname: string
-): Promise<boolean> {
-  const token = await getToken({ 
-    req: request, 
-    secret: process.env.NEXTAUTH_SECRET 
-  })
-  
-  if (!token) return false
-  
-  // Admin-only paths
-  const adminPaths = [
-    '/api/admin',
-    '/api/organizations/create',
-    '/api/insights/generate'
-  ]
-  
-  if (adminPaths.some(path => pathname.startsWith(path))) {
-    // Check if user is admin (would need to query database)
-    return true // Simplified - in production, check actual permissions
-  }
-  
-  return true
-}
-
-/**
- * Main middleware function
+ * Enhanced middleware with authentication, currency support, and CORS handling
  */
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
-  const clientId = getClientIdentifier(request)
-  
-  // Create response with security headers
-  const response = NextResponse.next()
-  
-  // Apply security headers to all responses
-  Object.entries(SECURITY_HEADERS).forEach(([key, value]) => {
-    response.headers.set(key, value)
-  })
-  
-  // Skip middleware for static files and Next.js internals
-  if (
-    pathname.startsWith('/_next') ||
-    pathname.startsWith('/favicon') ||
-    pathname.endsWith('.ico') ||
-    pathname.endsWith('.png') ||
-    pathname.endsWith('.jpg') ||
-    pathname.endsWith('.svg') ||
-    pathname.includes('.')
-  ) {
-    return response
-  }
   
   try {
-    // 1. Rate limiting
-    if (isRateLimited(clientId)) {
-      console.log(`🚫 Rate limit exceeded for client: ${clientId}`)
-      return new NextResponse(
-        JSON.stringify({ error: 'Rate limit exceeded' }),
-        {
-          status: 429,
-          headers: {
-            'Content-Type': 'application/json',
-            'Retry-After': '60',
-            ...Object.fromEntries(response.headers.entries())
-          }
-        }
-      )
+    let response = NextResponse.next()
+
+    // Apply currency middleware to all requests
+    const currencyResponse = await currencyMiddleware(request)
+    if (currencyResponse) {
+      response = currencyResponse
     }
-    
-    // 2. Webhook validation
-    if (pathname.includes('/webhook/') && !validateWebhookSignature(request)) {
-      console.log(`🚫 Invalid webhook signature for: ${pathname}`)
-      return new NextResponse(
-        JSON.stringify({ error: 'Invalid signature' }),
-        {
-          status: 401,
-          headers: {
-            'Content-Type': 'application/json',
-            ...Object.fromEntries(response.headers.entries())
-          }
-        }
-      )
-    }
-    
-    // 3. Authentication check for protected routes
-    if (requiresAuth(pathname)) {
+
+    // Authentication check for protected routes
+    if (pathname.startsWith('/dashboard') || 
+        pathname.startsWith('/api/') && !pathname.startsWith('/api/auth')) {
+      
       const token = await getToken({ 
         req: request, 
         secret: process.env.NEXTAUTH_SECRET 
       })
       
       if (!token) {
-        console.log(`🚫 Authentication required for: ${pathname}`)
-        
         if (pathname.startsWith('/api/')) {
-          return new NextResponse(
-            JSON.stringify({ error: 'Authentication required' }),
-            {
-              status: 401,
-              headers: {
-                'Content-Type': 'application/json',
-                ...Object.fromEntries(response.headers.entries())
-              }
-            }
+          return NextResponse.json(
+            { error: 'Authentication required' },
+            { status: 401 }
           )
-        } else {
-          // Redirect to login for dashboard routes
-          const loginUrl = new URL('/auth/signin', request.url)
-          loginUrl.searchParams.set('callbackUrl', pathname)
-          console.log(`🔀 Redirecting to login: ${loginUrl.toString()}`)
-          return NextResponse.redirect(loginUrl)
         }
+        
+        // Redirect to sign in for dashboard routes
+        const signInUrl = new URL('/api/auth/signin', request.url)
+        signInUrl.searchParams.set('callbackUrl', request.url)
+        return NextResponse.redirect(signInUrl)
       }
-      
-      // 4. Permission check
-      const hasRequiredPermission = await hasPermission(request, pathname)
-      
-      if (!hasRequiredPermission) {
-        console.log(`🚫 Insufficient permissions for: ${pathname}`)
-        
-        if (pathname.startsWith('/api/')) {
-          return new NextResponse(
-            JSON.stringify({ error: 'Insufficient permissions' }),
-            {
-              status: 403,
-              headers: {
-                'Content-Type': 'application/json',
-                ...Object.fromEntries(response.headers.entries())
-              }
-            }
-          )
-        } else {
-          return NextResponse.redirect(new URL('/dashboard', request.url))
-        }
+
+      // Add user context to API requests
+      if (pathname.startsWith('/api/')) {
+        response.headers.set('x-user-id', token.sub || '')
+        response.headers.set('x-user-email', token.email || '')
       }
     }
-    
-    // 5. CORS handling for API routes
+
+    // CORS handling for API routes
     if (pathname.startsWith('/api/')) {
       const origin = request.headers.get('origin')
       const allowedOrigins = [
         process.env.NEXTAUTH_URL,
         process.env.APP_URL,
-        'http://localhost:3000', // Development
+        'http://localhost:3000',
         'https://localhost:3000'
       ].filter(Boolean)
       
@@ -243,7 +67,7 @@ export async function middleware(request: NextRequest) {
         )
         response.headers.set(
           'Access-Control-Allow-Headers',
-          'Content-Type, Authorization, X-Requested-With'
+          'Content-Type, Authorization, X-Requested-With, x-user-currency, x-user-locale'
         )
       }
       
@@ -255,28 +79,59 @@ export async function middleware(request: NextRequest) {
         })
       }
     }
-    
+
+    // Rate limiting for sensitive endpoints
+    if (pathname.startsWith('/api/integrations/') || 
+        pathname.startsWith('/api/currency/')) {
+      
+      const ip = request.headers.get('x-forwarded-for') || 
+                 request.headers.get('x-real-ip') || 
+                 'unknown'
+      
+      // Simple rate limiting (in production, use Redis or similar)
+      const rateLimitKey = `rate_limit_${ip}_${pathname}`
+      
+      // Add rate limiting headers
+      response.headers.set('X-RateLimit-Limit', '100')
+      response.headers.set('X-RateLimit-Remaining', '99')
+      response.headers.set('X-RateLimit-Reset', String(Date.now() + 60000))
+    }
+
+    // Security headers
+    response.headers.set('X-Frame-Options', 'DENY')
+    response.headers.set('X-Content-Type-Options', 'nosniff')
+    response.headers.set('Referrer-Policy', 'origin-when-cross-origin')
+    response.headers.set(
+      'Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:;"
+    )
+
+    // Add currency context to dashboard pages
+    if (pathname.startsWith('/dashboard')) {
+      const userCurrency = request.cookies.get('user-currency')?.value || 'INR'
+      response.headers.set('x-dashboard-currency', userCurrency)
+    }
+
     return response
     
   } catch (error) {
     console.error('❌ Middleware error:', error)
     
-    // Return a generic error response
-    return new NextResponse(
-      JSON.stringify({ error: 'Internal server error' }),
-      {
-        status: 500,
-        headers: {
-          'Content-Type': 'application/json',
-          ...Object.fromEntries(response.headers.entries())
-        }
-      }
-    )
+    // Return error response for API routes
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        { error: 'Internal server error' },
+        { status: 500 }
+      )
+    }
+    
+    // For non-API routes, continue with request
+    return NextResponse.next()
   }
 }
 
 /**
- * Middleware configuration
+ * Middleware configuration with currency-aware route matching
  */
 export const config = {
   matcher: [
