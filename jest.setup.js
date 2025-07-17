@@ -145,7 +145,7 @@ process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test'
 process.env.SHOPIFY_WEBHOOK_SECRET = 'test-shopify-secret'
 process.env.STRIPE_WEBHOOK_SECRET = 'test-stripe-secret'
 
-// Global test utilities
+// Global test utilities - Factory functions only (no hardcoded data)
 global.testUtils = {
   // Helper to create mock user session
   createMockSession: (overrides = {}) => ({

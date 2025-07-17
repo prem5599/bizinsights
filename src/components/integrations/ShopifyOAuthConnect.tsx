@@ -1,7 +1,7 @@
 // src/components/integrations/ShopifyOAuthConnect.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X, Loader2, ShoppingBag, Check, ExternalLink, Key, Globe } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -9,15 +9,43 @@ interface ShopifyOAuthConnectProps {
   isOpen: boolean
   onClose: () => void
   onSuccess: (integration: any) => void
+  organizationId?: string  // Add optional organizationId prop
 }
 
-export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess }: ShopifyOAuthConnectProps) {
+export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess, organizationId }: ShopifyOAuthConnectProps) {
   const [shopDomain, setShopDomain] = useState('')
   const [accessToken, setAccessToken] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [step, setStep] = useState<'method' | 'domain' | 'token' | 'connecting' | 'success'>('method')
   const [authMethod, setAuthMethod] = useState<'oauth' | 'private'>('oauth')
+  const [currentOrgId, setCurrentOrgId] = useState<string | null>(organizationId || null)
+
+  // Fetch organization if not provided
+  useEffect(() => {
+    if (!currentOrgId && isOpen) {
+      fetchOrganization()
+    }
+  }, [isOpen, currentOrgId])
+
+  const fetchOrganization = async () => {
+    try {
+      const response = await fetch('/api/organizations/me')
+      if (!response.ok) throw new Error('Failed to fetch organization')
+      
+      const data = await response.json()
+      const defaultOrg = data.organizations?.[0]
+      
+      if (defaultOrg) {
+        setCurrentOrgId(defaultOrg.id)
+      } else {
+        setError('No organization found. Please create an organization first.')
+      }
+    } catch (error) {
+      console.error('Error fetching organization:', error)
+      setError('Failed to fetch organization')
+    }
+  }
 
   const handleMethodSelect = (method: 'oauth' | 'private') => {
     setAuthMethod(method)
@@ -38,6 +66,11 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess }: ShopifyOAuth
   }
 
   const handleOAuthFlow = async () => {
+    if (!currentOrgId) {
+      setError('Organization not found. Please refresh and try again.')
+      return
+    }
+
     setLoading(true)
     setError(null)
     setStep('connecting')
@@ -48,10 +81,13 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess }: ShopifyOAuth
         .replace(/\.myshopify\.com\/?$/, '')
 
       // Generate OAuth URL
-      const response = await fetch('/api/integrations/shopify/oauth-url', {
+      const response = await fetch('/api/integrations/shopify/oauth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shopDomain: cleanDomain })
+        body: JSON.stringify({ 
+          shopDomain: cleanDomain,
+          organizationId: currentOrgId
+        })
       })
 
       const data = await response.json()
@@ -60,8 +96,13 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess }: ShopifyOAuth
         throw new Error(data.error || 'Failed to generate OAuth URL')
       }
 
-      // Redirect to Shopify OAuth
-      window.location.href = data.authUrl
+      // If we get a success response, call onSuccess
+      if (data.success) {
+        setStep('success')
+        onSuccess(data.integration)
+      } else {
+        throw new Error(data.error || 'OAuth flow failed')
+      }
 
     } catch (error) {
       console.error('OAuth flow error:', error)
@@ -84,6 +125,11 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess }: ShopifyOAuth
       return
     }
 
+    if (!currentOrgId) {
+      setError('Organization not found. Please refresh and try again.')
+      return
+    }
+
     setLoading(true)
     setError(null)
     setStep('connecting')
@@ -94,7 +140,7 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess }: ShopifyOAuth
         domainTrimmed: shopDomain.trim(),
         tokenLength: trimmedToken.length,
         tokenStart: trimmedToken.substring(0, 10),
-        tokenEnd: trimmedToken.substring(-5)
+        hasOrgId: !!currentOrgId
       })
 
       const response = await fetch('/api/integrations/shopify/private-app', {
@@ -102,15 +148,15 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess }: ShopifyOAuth
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           shopDomain: shopDomain.trim(),
-          accessToken: trimmedToken
+          accessToken: trimmedToken,
+          organizationId: currentOrgId  // Add the missing organizationId
         })
       })
 
       console.log('📡 Response received:', {
         status: response.status,
         statusText: response.statusText,
-        ok: response.ok,
-        headers: Object.fromEntries(response.headers.entries())
+        ok: response.ok
       })
 
       let data
@@ -134,8 +180,7 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess }: ShopifyOAuth
         console.error('❌ API Error:', {
           status: response.status,
           statusText: response.statusText,
-          data,
-          url: response.url
+          data
         })
         
         // Provide more specific error messages
@@ -143,6 +188,8 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess }: ShopifyOAuth
           throw new Error('Invalid access token. Please check your token and try again.')
         } else if (response.status === 404) {
           throw new Error('Shop not found. Please check your shop domain.')
+        } else if (response.status === 400) {
+          throw new Error(data?.error || 'Bad request. Please check your shop domain and token.')
         } else if (response.status === 500) {
           throw new Error(data?.details || data?.error || 'Internal server error. Please try again.')
         } else {
@@ -150,67 +197,46 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess }: ShopifyOAuth
         }
       }
 
-      if (!data?.success) {
-        throw new Error(data?.error || 'Connection failed - no success confirmation')
-      }
-
-      console.log('✅ Connection successful:', data)
+      // Success
       setStep('success')
-      
-      setTimeout(() => {
-        onSuccess(data.integration)
-        onClose()
-        resetForm()
-      }, 2000)
+      onSuccess(data.integration)
 
     } catch (error) {
-      console.error('❌ Connection error:', error)
-      
-      let errorMessage = 'Connection failed'
-      if (error instanceof Error) {
-        errorMessage = error.message
-      } else if (typeof error === 'string') {
-        errorMessage = error
-      }
-      
-      setError(errorMessage)
+      console.error('❌ Token connection error:', error)
+      setError(error instanceof Error ? error.message : 'Connection failed')
       setStep('token')
+    } finally {
       setLoading(false)
     }
   }
 
   const resetForm = () => {
-    setStep('method')
     setShopDomain('')
     setAccessToken('')
     setError(null)
+    setStep('method')
     setLoading(false)
   }
 
   const handleClose = () => {
-    onClose()
     resetForm()
+    onClose()
   }
 
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+        <div className="flex items-center justify-between p-6 border-b">
           <div className="flex items-center">
-            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mr-3">
-              <ShoppingBag className="h-6 w-6 text-green-600" />
-            </div>
-            <h2 className="text-xl font-semibold text-gray-900">
-              Connect Shopify Store
-            </h2>
+            <ShoppingBag className="h-6 w-6 text-green-600 mr-3" />
+            <h2 className="text-xl font-semibold text-gray-900">Connect Shopify Store</h2>
           </div>
           <button
             onClick={handleClose}
             className="text-gray-400 hover:text-gray-600"
-            disabled={loading}
           >
             <X className="h-6 w-6" />
           </button>
@@ -227,42 +253,34 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess }: ShopifyOAuth
           {/* Method Selection */}
           {step === 'method' && (
             <div className="space-y-4">
-              <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Choose Connection Method
-                </h3>
-                <p className="text-gray-600 mb-6">
-                  Select how you want to connect your Shopify store
-                </p>
+              <div className="text-center mb-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Choose Connection Method</h3>
+                <p className="text-sm text-gray-600">Select how you'd like to connect your Shopify store</p>
               </div>
 
-              <div className="grid grid-cols-1 gap-4">
+              <div className="space-y-3">
                 <button
                   onClick={() => handleMethodSelect('oauth')}
-                  className="p-4 border-2 border-gray-200 rounded-lg hover:border-blue-300 text-left transition-colors"
+                  className="w-full p-4 border-2 border-gray-200 rounded-lg hover:border-blue-300 transition-colors text-left"
                 >
-                  <div className="flex items-start">
-                    <Globe className="h-6 w-6 text-blue-600 mt-1 mr-3" />
+                  <div className="flex items-center">
+                    <Globe className="h-6 w-6 text-blue-600 mr-3" />
                     <div>
-                      <h4 className="font-medium text-gray-900">OAuth (Recommended)</h4>
-                      <p className="text-sm text-gray-600 mt-1">
-                        Secure authentication through Shopify. Works for any store.
-                      </p>
+                      <div className="font-medium text-gray-900">OAuth App (Recommended)</div>
+                      <div className="text-sm text-gray-600">Connect using Shopify OAuth - most secure</div>
                     </div>
                   </div>
                 </button>
 
                 <button
                   onClick={() => handleMethodSelect('private')}
-                  className="p-4 border-2 border-gray-200 rounded-lg hover:border-green-300 text-left transition-colors"
+                  className="w-full p-4 border-2 border-gray-200 rounded-lg hover:border-green-300 transition-colors text-left"
                 >
-                  <div className="flex items-start">
-                    <Key className="h-6 w-6 text-green-600 mt-1 mr-3" />
+                  <div className="flex items-center">
+                    <Key className="h-6 w-6 text-green-600 mr-3" />
                     <div>
-                      <h4 className="font-medium text-gray-900">Private App Token</h4>
-                      <p className="text-sm text-gray-600 mt-1">
-                        Use an access token from your Shopify admin. For your own store only.
-                      </p>
+                      <div className="font-medium text-gray-900">Private App</div>
+                      <div className="text-sm text-gray-600">Connect using access token</div>
                     </div>
                   </div>
                 </button>
@@ -274,20 +292,6 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess }: ShopifyOAuth
           {step === 'domain' && (
             <div className="space-y-4">
               <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Shopify Store Domain
-                </h3>
-                <p className="text-gray-600 mb-4">
-                  Enter your shop domain in any of these formats:
-                </p>
-                <ul className="text-sm text-gray-500 space-y-1 mb-6">
-                  <li>• <code className="bg-gray-100 px-1 rounded">mystore.myshopify.com</code></li>
-                  <li>• <code className="bg-gray-100 px-1 rounded">mystore</code> (just the store name)</li>
-                  <li>• <code className="bg-gray-100 px-1 rounded">https://mystore.myshopify.com</code></li>
-                </ul>
-              </div>
-
-              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Shop Domain
                 </label>
@@ -295,10 +299,13 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess }: ShopifyOAuth
                   type="text"
                   value={shopDomain}
                   onChange={(e) => setShopDomain(e.target.value)}
-                  placeholder="mystore.myshopify.com"
+                  placeholder="mystore or mystore.myshopify.com"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   disabled={loading}
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Enter your shop domain (with or without .myshopify.com)
+                </p>
               </div>
 
               <div className="flex justify-between">
@@ -314,7 +321,7 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess }: ShopifyOAuth
                   disabled={loading || !shopDomain.trim()}
                   className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                 >
-                  {authMethod === 'oauth' ? 'Continue with OAuth' : 'Next'}
+                  Continue
                 </button>
               </div>
             </div>
@@ -323,17 +330,14 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess }: ShopifyOAuth
           {/* Token Input (Private App) */}
           {step === 'token' && (
             <div className="space-y-4">
-              <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Private App Access Token
-                </h3>
-                <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mb-4">
-                  <h4 className="font-medium text-blue-900 mb-2">How to get your access token:</h4>
-                  <ol className="text-sm text-blue-800 space-y-1">
-                    <li>1. Go to your Shopify admin → Apps → "App and sales channel settings"</li>
-                    <li>2. Click "Develop apps" → "Create an app"</li>
-                    <li>3. Configure API scopes: read_orders, read_products, read_customers</li>
-                    <li>4. Install the app and copy the access token</li>
+              <div className="bg-blue-50 p-4 rounded-md">
+                <h4 className="font-medium text-blue-900 mb-2">Create a Private App</h4>
+                <div className="text-sm text-blue-800">
+                  <ol className="list-decimal list-inside space-y-1">
+                    <li>Go to your Shopify admin → Apps → "App and sales channel settings"</li>
+                    <li>Click "Develop apps" → "Create an app"</li>
+                    <li>Configure API scopes: read_orders, read_products, read_customers</li>
+                    <li>Install the app and copy the access token</li>
                   </ol>
                   <a
                     href={`https://${shopDomain.replace(/\.myshopify\.com$/, '')}.myshopify.com/admin/settings/apps`}
@@ -394,8 +398,8 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess }: ShopifyOAuth
               </h3>
               <p className="text-gray-600">
                 {authMethod === 'oauth' 
-                  ? 'You will be redirected to Shopify to authorize the connection'
-                  : 'Verifying your access token and setting up the integration'
+                  ? 'You will be redirected to Shopify to authorize the connection.'
+                  : 'Please wait while we verify your store connection.'
                 }
               </p>
             </div>
@@ -404,13 +408,19 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess }: ShopifyOAuth
           {/* Success State */}
           {step === 'success' && (
             <div className="text-center py-8">
-              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Check className="h-8 w-8 text-green-600" />
-              </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">Store Connected!</h3>
-              <p className="text-gray-600">
-                Your Shopify store has been successfully connected. We'll start syncing your data now.
+              <Check className="h-12 w-12 text-green-600 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Successfully Connected!
+              </h3>
+              <p className="text-gray-600 mb-4">
+                Your Shopify store has been connected and data sync has started.
               </p>
+              <button
+                onClick={handleClose}
+                className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+              >
+                Done
+              </button>
             </div>
           )}
         </div>

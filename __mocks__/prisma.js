@@ -1,7 +1,7 @@
 // __mocks__/prisma.js
 import { jest } from '@jest/globals'
 
-// Minimal mock database records for testing
+// Clean mock database records - all empty arrays
 const mockUsers = []
 const mockOrganizations = []
 const mockIntegrations = []

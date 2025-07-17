@@ -59,8 +59,7 @@ export async function POST(request: NextRequest) {
     if (!cleanShopDomain || cleanShopDomain.length < 3) {
       return NextResponse.json(
         { 
-          error: `Invalid shop domain format. 
-Please use formats like: mystore.myshopify.com, mystore.com, or just mystore`,
+          error: `Invalid shop domain format. Please use formats like: mystore.myshopify.com, mystore.com, or just mystore`,
           processed: cleanShopDomain,
           original: shopDomain
         },
@@ -139,4 +138,4 @@ Please use formats like: mystore.myshopify.com, mystore.com, or just mystore`,
       { status: 500 }
     )
   }
-}
+}integrations/shopify/private-app/route.ts
