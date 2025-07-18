@@ -95,7 +95,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Fetch insights with pagination
-    const [insights, totalCount] = await Promise.all([
+    const [insights, totalCount, summaryStats] = await Promise.all([
       prisma.insight.findMany({
         where: whereClause,
         include: {
@@ -117,44 +117,112 @@ export async function GET(req: NextRequest) {
       }),
       prisma.insight.count({
         where: whereClause
+      }),
+      // Get summary statistics for all insights in the organization
+      prisma.insight.groupBy({
+        by: ['type', 'isRead'],
+        where: whereClause,
+        _count: {
+          id: true
+        }
       })
     ])
 
     // Transform insights for response
-    const transformedInsights = insights.map(insight => ({
-      id: insight.id,
-      type: insight.type,
-      title: insight.title,
-      description: insight.description,
-      impactScore: insight.impactScore,
-      isRead: insight.isRead,
-      createdAt: insight.createdAt.toISOString(),
-      metadata: insight.metadata,
-      organization: insight.organization
-    }))
+    const transformedInsights = insights.map(insight => {
+      const createdAt = new Date(insight.createdAt)
+      const now = new Date()
+      const timeDiff = now.getTime() - createdAt.getTime()
+      
+      let relativeTime: string
+      if (timeDiff < 60000) { // Less than 1 minute
+        relativeTime = 'Just now'
+      } else if (timeDiff < 3600000) { // Less than 1 hour
+        relativeTime = `${Math.floor(timeDiff / 60000)}m ago`
+      } else if (timeDiff < 86400000) { // Less than 1 day
+        relativeTime = `${Math.floor(timeDiff / 3600000)}h ago`
+      } else {
+        relativeTime = `${Math.floor(timeDiff / 86400000)}d ago`
+      }
+
+      let impactLevel: string
+      if (insight.impactScore >= 8) {
+        impactLevel = 'high'
+      } else if (insight.impactScore >= 5) {
+        impactLevel = 'medium'
+      } else {
+        impactLevel = 'low'
+      }
+
+      let typeDisplayName: string
+      switch (insight.type) {
+        case 'trend':
+          typeDisplayName = 'Trend Analysis'
+          break
+        case 'anomaly':
+          typeDisplayName = 'Anomaly Detection'
+          break
+        case 'recommendation':
+          typeDisplayName = 'Recommendation'
+          break
+        default:
+          typeDisplayName = insight.type.charAt(0).toUpperCase() + insight.type.slice(1)
+      }
+
+      return {
+        id: insight.id,
+        type: insight.type,
+        title: insight.title,
+        description: insight.description,
+        impactScore: insight.impactScore,
+        isRead: insight.isRead,
+        createdAt: insight.createdAt.toISOString(),
+        relativeTime,
+        impactLevel,
+        typeDisplayName,
+        metadata: insight.metadata,
+        organization: insight.organization
+      }
+    })
 
     // Calculate summary statistics
-    const unreadCount = insights.filter(insight => !insight.isRead).length
-    const highImpactCount = insights.filter(insight => insight.impactScore >= 7).length
+    const typeBreakdown: Record<string, number> = {}
+    let totalInsights = 0
+    let unreadCount = 0
+    let readCount = 0
+
+    summaryStats.forEach(stat => {
+      totalInsights += stat._count.id
+      if (stat.isRead) {
+        readCount += stat._count.id
+      } else {
+        unreadCount += stat._count.id
+      }
+      
+      if (!typeBreakdown[stat.type]) {
+        typeBreakdown[stat.type] = 0
+      }
+      typeBreakdown[stat.type] += stat._count.id
+    })
+
+    const currentPage = Math.floor(offset / limit) + 1
+    const totalPages = Math.ceil(totalCount / limit)
 
     return NextResponse.json({
       insights: transformedInsights,
       pagination: {
-        total: totalCount,
-        limit,
-        offset,
-        hasNext: offset + limit < totalCount,
-        hasPrev: offset > 0
+        currentPage,
+        totalPages,
+        totalCount,
+        hasNextPage: offset + limit < totalCount,
+        hasPreviousPage: offset > 0,
+        limit
       },
       summary: {
-        total: totalCount,
-        unread: unreadCount,
-        highImpact: highImpactCount,
-        byType: {
-          trend: insights.filter(i => i.type === 'trend').length,
-          anomaly: insights.filter(i => i.type === 'anomaly').length,
-          recommendation: insights.filter(i => i.type === 'recommendation').length
-        }
+        totalInsights,
+        unreadCount,
+        readCount,
+        typeBreakdown
       }
     })
 

@@ -186,6 +186,33 @@ export async function POST(request: NextRequest) {
 
     console.log('✅ Integration created:', integration.id)
 
+    // Start initial data sync
+    console.log('🔄 Starting initial data sync...')
+    try {
+      const { ShopifyIntegration } = await import('@/lib/integrations/shopify')
+      const shopifyClient = new ShopifyIntegration(accessToken.trim(), cleanShopDomain)
+      
+      // Sync historical data (last 30 days)
+      const syncResult = await shopifyClient.syncHistoricalData(integration.id, 30)
+      
+      // Update integration with sync data
+      await prisma.integration.update({
+        where: { id: integration.id },
+        data: {
+          lastSyncAt: new Date(),
+          metadata: {
+            type: 'private_app',
+            connectedAt: new Date().toISOString(),
+            initialSync: syncResult
+          }
+        }
+      })
+      
+      console.log('✅ Initial sync completed:', syncResult)
+    } catch (syncError) {
+      console.warn('⚠️ Initial sync failed, but integration created:', syncError)
+    }
+
     console.log('🎉 Integration completed successfully')
 
     return NextResponse.json({

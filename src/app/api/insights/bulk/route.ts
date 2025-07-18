@@ -14,9 +14,17 @@ export async function PATCH(req: NextRequest) {
     const body = await req.json()
     const { organizationId, insightIds, action } = body
 
-    if (!organizationId || !insightIds || !Array.isArray(insightIds) || !action) {
+    if (!organizationId || !action) {
       return NextResponse.json(
-        { error: 'Organization ID, insight IDs array, and action are required' },
+        { error: 'Organization ID and action are required' },
+        { status: 400 }
+      )
+    }
+
+    // For actions other than 'markAllAsRead', require insightIds
+    if (action !== 'markAllAsRead' && (!insightIds || !Array.isArray(insightIds))) {
+      return NextResponse.json(
+        { error: 'Insight IDs array is required for this action' },
         { status: 400 }
       )
     }
@@ -41,13 +49,20 @@ export async function PATCH(req: NextRequest) {
 
     switch (action) {
       case 'markRead':
+      case 'markAsRead':
         updateData = { isRead: true }
-        message = `Marked ${insightIds.length} insights as read`
+        message = `Marked ${insightIds?.length || 0} insights as read`
         break
       
       case 'markUnread':
+      case 'markAsUnread':
         updateData = { isRead: false }
-        message = `Marked ${insightIds.length} insights as unread`
+        message = `Marked ${insightIds?.length || 0} insights as unread`
+        break
+      
+      case 'markAllAsRead':
+        updateData = { isRead: true }
+        message = `Marked all insights as read`
         break
       
       default:
@@ -58,17 +73,31 @@ export async function PATCH(req: NextRequest) {
     }
 
     // Update insights
-    const result = await prisma.insight.updateMany({
-      where: {
-        id: { in: insightIds },
-        organizationId
-      },
-      data: updateData
-    })
+    let result: any
+    if (action === 'markAllAsRead') {
+      // Mark all insights in the organization as read
+      result = await prisma.insight.updateMany({
+        where: {
+          organizationId
+        },
+        data: updateData
+      })
+    } else {
+      // Mark specific insights
+      result = await prisma.insight.updateMany({
+        where: {
+          id: { in: insightIds },
+          organizationId
+        },
+        data: updateData
+      })
+    }
 
     return NextResponse.json({
       success: true,
-      message,
+      message: action === 'markAllAsRead' ? 
+        `Marked ${result.count} insights as read` : 
+        message,
       updated: result.count
     })
 

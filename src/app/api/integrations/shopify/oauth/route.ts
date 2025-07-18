@@ -89,46 +89,52 @@ export async function POST(request: NextRequest) {
 
     console.log('✅ No existing integration found')
 
-    // Generate a mock access token for demo
-    const mockAccessToken = `mock_token_${crypto.randomBytes(16).toString('hex')}`
-    console.log('🔑 Generated mock token')
+    // Check if we have Shopify credentials configured
+    if (!process.env.SHOPIFY_CLIENT_ID || !process.env.SHOPIFY_CLIENT_SECRET || 
+        process.env.SHOPIFY_CLIENT_ID === 'your_shopify_app_client_id') {
+      console.log('❌ Shopify OAuth credentials not configured')
+      return NextResponse.json(
+        { 
+          error: 'Shopify OAuth not configured. Please use Private App method instead.',
+          suggestion: 'Configure SHOPIFY_CLIENT_ID and SHOPIFY_CLIENT_SECRET in your .env file for OAuth, or use the Private App connection method.'
+        },
+        { status: 400 }
+      )
+    }
+
+    // Generate OAuth state
+    const state = crypto.randomBytes(32).toString('hex')
     
-    // Create the integration
-    console.log('💾 Creating integration...')
-    const integration = await prisma.integration.create({
+    // Store state in database for verification
+    await prisma.integration.create({
       data: {
         organizationId: organizationId,
         platform: 'shopify',
         platformAccountId: cleanShopDomain,
-        accessToken: mockAccessToken,
-        status: 'active',
-        lastSyncAt: null
+        accessToken: null,
+        status: 'pending',
+        lastSyncAt: null,
+        metadata: {
+          oauthState: state,
+          pendingOAuth: true,
+          createdAt: new Date().toISOString()
+        }
       }
     })
 
-    console.log('✅ Integration created:', integration.id)
+    // Generate OAuth URL
+    const authUrl = `https://${cleanShopDomain}.myshopify.com/admin/oauth/authorize?` +
+      `client_id=${process.env.SHOPIFY_CLIENT_ID}&` +
+      `scope=read_orders,read_customers,read_products,read_analytics&` +
+      `redirect_uri=${encodeURIComponent(process.env.NEXTAUTH_URL + '/api/integrations/shopify/callback')}&` +
+      `state=${state}`
 
-    console.log('Shopify integration created successfully:', {
-      integrationId: integration.id,
-      organizationId: organizationId,
-      shopDomain: cleanShopDomain
-    })
-
+    console.log('🔗 Generated OAuth URL')
+    
     return NextResponse.json({
       success: true,
-      integration: {
-        id: integration.id,
-        platform: 'shopify',
-        platformAccountId: cleanShopDomain,
-        status: 'active',
-        lastSyncAt: integration.lastSyncAt,
-        createdAt: integration.createdAt
-      },
-      organization: {
-        id: userMembership.organization.id,
-        name: userMembership.organization.name
-      },
-      message: 'Shopify store connected successfully'
+      redirectUrl: authUrl,
+      message: 'Redirecting to Shopify for authorization...'
     })
 
   } catch (error) {
@@ -138,4 +144,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}integrations/shopify/private-app/route.ts
+}

@@ -13,7 +13,6 @@ import {
   Database,
   Zap,
   Settings,
-  ExternalLink,
   ShoppingBag,
   CreditCard,
   BarChart3,
@@ -21,7 +20,6 @@ import {
   MessageSquare,
   FileText,
   Plus,
-  TrendingUp,
   AlertTriangle
 } from 'lucide-react'
 import { cn } from '@/lib/utils'

@@ -2,13 +2,12 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Loader2, ShoppingBag, Check, ExternalLink, Key, Globe } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { X, Loader2, ShoppingBag, Check, ExternalLink, Key, Globe, PlayCircle } from 'lucide-react'
 
 interface ShopifyOAuthConnectProps {
   isOpen: boolean
   onClose: () => void
-  onSuccess: (integration: any) => void
+  onSuccess: (integration: unknown) => void
   organizationId?: string  // Add optional organizationId prop
 }
 
@@ -18,7 +17,7 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess, organizationId
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [step, setStep] = useState<'method' | 'domain' | 'token' | 'connecting' | 'success'>('method')
-  const [authMethod, setAuthMethod] = useState<'oauth' | 'private'>('oauth')
+  const [authMethod, setAuthMethod] = useState<'oauth' | 'private' | 'demo'>('oauth')
   const [currentOrgId, setCurrentOrgId] = useState<string | null>(organizationId || null)
 
   // Fetch organization if not provided
@@ -47,9 +46,13 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess, organizationId
     }
   }
 
-  const handleMethodSelect = (method: 'oauth' | 'private') => {
+  const handleMethodSelect = (method: 'oauth' | 'private' | 'demo') => {
     setAuthMethod(method)
-    setStep('domain')
+    if (method === 'demo') {
+      setStep('domain')
+    } else {
+      setStep('domain')
+    }
   }
 
   const handleDomainSubmit = () => {
@@ -60,6 +63,8 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess, organizationId
 
     if (authMethod === 'oauth') {
       handleOAuthFlow()
+    } else if (authMethod === 'demo') {
+      handleDemoConnect()
     } else {
       setStep('token')
     }
@@ -112,6 +117,44 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess, organizationId
     }
   }
 
+  const handleDemoConnect = async () => {
+    if (!currentOrgId) {
+      setError('Organization not found. Please refresh and try again.')
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+    setStep('connecting')
+
+    try {
+      const response = await fetch('/api/integrations/shopify/demo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          storeName: shopDomain.trim(),
+          organizationId: currentOrgId
+        })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create demo integration')
+      }
+
+      setStep('success')
+      onSuccess(data.integration)
+
+    } catch (error) {
+      console.error('Demo connection error:', error)
+      setError(error instanceof Error ? error.message : 'Demo connection failed')
+      setStep('domain')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleTokenConnect = async () => {
     const trimmedToken = accessToken.trim()
     
@@ -159,7 +202,7 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess, organizationId
         ok: response.ok
       })
 
-      let data
+      let data: any
       try {
         const responseText = await response.text()
         console.log('📝 Raw response text:', responseText)
@@ -284,6 +327,19 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess, organizationId
                     </div>
                   </div>
                 </button>
+
+                <button
+                  onClick={() => handleMethodSelect('demo')}
+                  className="w-full p-4 border-2 border-gray-200 rounded-lg hover:border-purple-300 transition-colors text-left"
+                >
+                  <div className="flex items-center">
+                    <PlayCircle className="h-6 w-6 text-purple-600 mr-3" />
+                    <div>
+                      <div className="font-medium text-gray-900">Demo Store</div>
+                      <div className="text-sm text-gray-600">Test with sample data - no real store needed</div>
+                    </div>
+                  </div>
+                </button>
               </div>
             </div>
           )}
@@ -291,20 +347,31 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess, organizationId
           {/* Domain Input */}
           {step === 'domain' && (
             <div className="space-y-4">
+              {authMethod === 'demo' && (
+                <div className="p-3 bg-purple-50 border border-purple-200 rounded-md">
+                  <p className="text-sm text-purple-800">
+                    🎭 <strong>Demo Mode:</strong> This will create a demo store with sample data for testing purposes. No real Shopify store is needed.
+                  </p>
+                </div>
+              )}
+              
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Shop Domain
+                  {authMethod === 'demo' ? 'Demo Store Name' : 'Shop Domain'}
                 </label>
                 <input
                   type="text"
                   value={shopDomain}
                   onChange={(e) => setShopDomain(e.target.value)}
-                  placeholder="mystore or mystore.myshopify.com"
+                  placeholder={authMethod === 'demo' ? 'my-demo-store' : 'mystore or mystore.myshopify.com'}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   disabled={loading}
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Enter your shop domain (with or without .myshopify.com)
+                  {authMethod === 'demo' 
+                    ? 'Enter a name for your demo store (e.g., "my-test-store")'
+                    : 'Enter your shop domain (with or without .myshopify.com)'
+                  }
                 </p>
               </div>
 
@@ -334,8 +401,8 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess, organizationId
                 <h4 className="font-medium text-blue-900 mb-2">Create a Private App</h4>
                 <div className="text-sm text-blue-800">
                   <ol className="list-decimal list-inside space-y-1">
-                    <li>Go to your Shopify admin → Apps → "App and sales channel settings"</li>
-                    <li>Click "Develop apps" → "Create an app"</li>
+                    <li>Go to your Shopify admin → Apps → &quot;App and sales channel settings&quot;</li>
+                    <li>Click &quot;Develop apps&quot; → &quot;Create an app&quot;</li>
                     <li>Configure API scopes: read_orders, read_products, read_customers</li>
                     <li>Install the app and copy the access token</li>
                   </ol>
@@ -394,11 +461,14 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess, organizationId
             <div className="text-center py-8">
               <Loader2 className="h-8 w-8 text-blue-600 animate-spin mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">
-                {authMethod === 'oauth' ? 'Redirecting to Shopify...' : 'Connecting to your store...'}
+                {authMethod === 'oauth' ? 'Redirecting to Shopify...' : 
+                 authMethod === 'demo' ? 'Creating demo store...' : 'Connecting to your store...'}
               </h3>
               <p className="text-gray-600">
                 {authMethod === 'oauth' 
                   ? 'You will be redirected to Shopify to authorize the connection.'
+                  : authMethod === 'demo'
+                  ? 'Setting up demo store with sample data...'
                   : 'Please wait while we verify your store connection.'
                 }
               </p>

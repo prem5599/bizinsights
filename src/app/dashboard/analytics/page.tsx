@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { MetricCard } from '@/components/layout/MetricCard'
+import { ExportButton } from '@/components/export/ExportButton'
 import { 
   BarChart3, 
   TrendingUp, 
@@ -137,6 +138,26 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(false)
   const [dateRange, setDateRange] = useState('30d')
   const [selectedMetric, setSelectedMetric] = useState('revenue')
+  const [organizationId, setOrganizationId] = useState<string | null>(null)
+
+  useEffect(() => {
+    // Fetch organization ID
+    const fetchOrganization = async () => {
+      try {
+        const response = await fetch('/api/organizations/current')
+        if (response.ok) {
+          const data = await response.json()
+          setOrganizationId(data.organization.id)
+        }
+      } catch (error) {
+        console.error('Failed to fetch organization:', error)
+      }
+    }
+
+    if (session?.user?.id) {
+      fetchOrganization()
+    }
+  }, [session?.user?.id])
 
   useEffect(() => {
     // In a real application, fetch analytics data from your API
@@ -210,10 +231,16 @@ export default function AnalyticsPage() {
                 <RefreshCw className={cn("h-4 w-4 mr-2", loading && "animate-spin")} />
                 Refresh
               </button>
-              <button className="flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-blue-600 rounded-md hover:bg-blue-700">
-                <Download className="h-4 w-4 mr-2" />
-                Export
-              </button>
+              {organizationId && (
+                <ExportButton
+                  exportType="analytics"
+                  organizationId={organizationId}
+                  variant="default"
+                  size="md"
+                  showLabel={true}
+                  customLabel="Export"
+                />
+              )}
             </div>
           </div>
         </div>
@@ -424,10 +451,16 @@ export default function AnalyticsPage() {
                   <ArrowRight className="h-4 w-4 mr-2" />
                   View Reports
                 </button>
-                <button className="flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-blue-600 rounded-md hover:bg-blue-700">
-                  <Download className="h-4 w-4 mr-2" />
-                  Export Data
-                </button>
+                {organizationId && (
+                  <ExportButton
+                    exportType="analytics"
+                    organizationId={organizationId}
+                    variant="default"
+                    size="md"
+                    showLabel={true}
+                    customLabel="Export Data"
+                  />
+                )}
               </div>
             </div>
           </div>

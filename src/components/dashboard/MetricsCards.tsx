@@ -14,7 +14,7 @@ import {
   BarChart3,
   Minus
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+
 
 interface MetricValue {
   current: number
@@ -79,7 +79,6 @@ function formatValue(value: number, format: 'currency' | 'number' | 'percentage'
 function MetricCard({ 
   title, 
   value, 
-  change, 
   changePercent, 
   trend, 
   icon, 

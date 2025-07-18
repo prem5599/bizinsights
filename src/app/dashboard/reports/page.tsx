@@ -54,138 +54,147 @@ export default function ReportsPage() {
   const [reports, setReports] = useState<Report[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [organizationId, setOrganizationId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'all' | 'scheduled' | 'templates'>('all')
   const [selectedType, setSelectedType] = useState<string>('all')
   const [generating, setGenerating] = useState<string | null>(null)
 
-  // Mock report templates
+  // Report templates
   const reportTemplates: ReportTemplate[] = [
     {
-      id: 'revenue-summary',
-      name: 'Revenue Summary',
-      description: 'Comprehensive overview of revenue trends, top products, and growth metrics',
-      type: 'revenue',
+      id: 'weekly',
+      name: 'Weekly Summary Report',
+      description: 'Comprehensive weekly overview of business performance and key metrics',
+      type: 'weekly',
       icon: <DollarSign className="h-6 w-6 text-green-600" />,
       estimatedTime: '2-3 minutes',
-      dataPoints: ['Revenue trends', 'Product performance', 'Regional breakdown', 'Payment methods']
+      dataPoints: ['Revenue trends', 'Order volume', 'Customer acquisition', 'Performance insights']
     },
     {
-      id: 'customer-analytics',
-      name: 'Customer Analytics',
-      description: 'Deep dive into customer behavior, acquisition, and lifetime value',
-      type: 'customers',
-      icon: <Users className="h-6 w-6 text-blue-600" />,
+      id: 'monthly',
+      name: 'Monthly Business Report',
+      description: 'Detailed monthly analysis with trends, forecasts, and recommendations',
+      type: 'monthly',
+      icon: <BarChart3 className="h-6 w-6 text-blue-600" />,
       estimatedTime: '3-4 minutes',
-      dataPoints: ['Customer acquisition', 'Retention rates', 'Lifetime value', 'Demographics']
+      dataPoints: ['Monthly growth', 'Revenue breakdown', 'Customer analytics', 'Actionable insights']
     },
     {
-      id: 'product-performance',
-      name: 'Product Performance',
-      description: 'Analysis of product sales, inventory, and profitability',
-      type: 'products',
-      icon: <ShoppingCart className="h-6 w-6 text-purple-600" />,
-      estimatedTime: '2-3 minutes',
-      dataPoints: ['Sales volume', 'Profit margins', 'Inventory levels', 'Top performers']
-    },
-    {
-      id: 'marketing-roi',
-      name: 'Marketing ROI',
-      description: 'Track marketing campaign effectiveness and return on investment',
-      type: 'marketing',
-      icon: <BarChart3 className="h-6 w-6 text-orange-600" />,
-      estimatedTime: '4-5 minutes',
-      dataPoints: ['Campaign performance', 'Channel effectiveness', 'Cost per acquisition', 'Attribution']
+      id: 'custom',
+      name: 'Custom Date Range Report',
+      description: 'Generate reports for any date range with personalized analysis',
+      type: 'custom',
+      icon: <Calendar className="h-6 w-6 text-purple-600" />,
+      estimatedTime: '2-4 minutes',
+      dataPoints: ['Custom metrics', 'Flexible date range', 'Targeted analysis', 'Comparative insights']
     }
   ]
 
   useEffect(() => {
     if (status === 'authenticated' && session?.user?.id) {
-      fetchReports()
+      fetchOrganizationAndReports()
     } else if (status === 'unauthenticated') {
       setError('Please sign in to view reports')
       setLoading(false)
     }
   }, [session, status])
 
-  const fetchReports = async () => {
+  const fetchOrganizationAndReports = async () => {
     try {
       setLoading(true)
       setError(null)
       
-      // Mock API call - replace with actual API
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      // First, get the current organization
+      const orgResponse = await fetch('/api/organizations/current')
+      if (!orgResponse.ok) {
+        throw new Error('Failed to fetch organization')
+      }
       
-      // Mock data
-      const mockReports: Report[] = [
-        {
-          id: '1',
-          title: 'Monthly Revenue Report - October 2024',
-          description: 'Comprehensive revenue analysis for October including trends and forecasts',
-          type: 'revenue',
-          format: 'pdf',
-          status: 'completed',
-          createdAt: '2024-11-01T10:30:00Z',
-          completedAt: '2024-11-01T10:33:00Z',
-          downloadUrl: '/reports/monthly-revenue-oct-2024.pdf',
-          size: '2.4 MB',
-          pages: 12
-        },
-        {
-          id: '2',
-          title: 'Customer Analytics Dashboard',
-          description: 'Weekly customer behavior and acquisition metrics',
-          type: 'customers',
-          format: 'excel',
-          status: 'completed',
-          createdAt: '2024-10-28T09:15:00Z',
-          completedAt: '2024-10-28T09:18:00Z',
-          downloadUrl: '/reports/customer-analytics-week43.xlsx',
-          scheduleFrequency: 'weekly',
-          size: '1.8 MB'
-        },
-        {
-          id: '3',
-          title: 'Product Performance Report',
-          description: 'Q3 product sales and inventory analysis',
-          type: 'products',
-          format: 'pdf',
-          status: 'generating',
-          createdAt: '2024-11-01T14:20:00Z',
-          estimatedTime: '2 minutes remaining'
-        },
-        {
-          id: '4',
-          title: 'Marketing ROI Analysis',
-          description: 'Campaign effectiveness report for October',
-          type: 'marketing',
-          format: 'csv',
-          status: 'failed',
-          createdAt: '2024-10-31T16:45:00Z',
-          error: 'Insufficient marketing data for analysis'
-        }
-      ]
+      const orgData = await orgResponse.json()
+      const currentOrgId = orgData.organization.id
+      setOrganizationId(currentOrgId)
       
-      setReports(mockReports)
+      // Then fetch reports data
+      await fetchReports(currentOrgId)
     } catch (error) {
-      console.error('Error fetching reports:', error)
+      console.error('Failed to fetch organization and reports:', error)
       setError('Failed to load reports')
     } finally {
       setLoading(false)
     }
   }
 
+  const fetchReports = async (orgId: string) => {
+    try {
+      const response = await fetch(`/api/organizations/${orgId}/reports`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch reports')
+      }
+      
+      const data = await response.json()
+      
+      // Transform the data to match the expected format
+      const transformedReports = data.reports.map((report: any) => ({
+        id: report.id,
+        title: report.title,
+        description: `Report for ${new Date(report.dateRangeStart).toLocaleDateString()} - ${new Date(report.dateRangeEnd).toLocaleDateString()}`,
+        type: report.reportType,
+        format: 'pdf', // Default format
+        status: report.emailedAt ? 'completed' : 'completed',
+        createdAt: report.generatedAt,
+        completedAt: report.generatedAt,
+        downloadUrl: `/api/organizations/${orgId}/reports/${report.id}/download`,
+        size: '1.2 MB', // Default size
+        pages: 8 // Default pages
+      }))
+      
+      setReports(transformedReports)
+    } catch (error) {
+      console.error('Failed to fetch reports:', error)
+      throw error
+    }
+  }
+
   const handleGenerateReport = async (templateId: string) => {
     const template = reportTemplates.find(t => t.id === templateId)
-    if (!template) return
+    if (!template || !organizationId) return
 
     setGenerating(templateId)
     
     try {
-      // Mock API call to generate report
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      
+      // For custom reports, we'd need to collect date range from user
+      // For now, let's use default date ranges for weekly/monthly
+      const requestBody: any = {
+        action: 'generate',
+        reportType: template.type,
+        emailReport: false
+      }
+
+      // Add date range for custom reports (would need UI for this)
+      if (template.type === 'custom') {
+        const endDate = new Date()
+        const startDate = new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000) // 30 days ago
+        requestBody.startDate = startDate.toISOString()
+        requestBody.endDate = endDate.toISOString()
+      }
+
+      const response = await fetch(`/api/organizations/${organizationId}/reports`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody)
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to generate report')
+      }
+
+      // Create a temporary report entry to show generation progress
       const newReport: Report = {
-        id: Date.now().toString(),
+        id: `temp-${Date.now()}`,
         title: `${template.name} - ${new Date().toLocaleDateString()}`,
         description: template.description,
         type: template.type as any,
@@ -196,17 +205,18 @@ export default function ReportsPage() {
       
       setReports(prev => [newReport, ...prev])
       
-      // Simulate completion after a delay
-      setTimeout(() => {
-        setReports(prev => prev.map(report => 
-          report.id === newReport.id 
-            ? { ...report, status: 'completed' as const, completedAt: new Date().toISOString(), downloadUrl: `/reports/${template.id}-${Date.now()}.pdf` }
-            : report
-        ))
+      // Simulate completion and refresh reports
+      setTimeout(async () => {
+        try {
+          await fetchReports(organizationId)
+        } catch (error) {
+          console.error('Error refreshing reports:', error)
+        }
       }, 3000)
       
     } catch (error) {
       console.error('Error generating report:', error)
+      setError(error instanceof Error ? error.message : 'Failed to generate report')
     } finally {
       setGenerating(null)
     }
@@ -305,6 +315,32 @@ export default function ReportsPage() {
           </nav>
         </div>
 
+        {/* Error Display */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-md p-4 mb-6">
+            <div className="flex items-center">
+              <AlertCircle className="h-5 w-5 text-red-400 mr-2" />
+              <div className="flex-1">
+                <h3 className="text-sm font-medium text-red-800">Error</h3>
+                <p className="text-sm text-red-700 mt-1">{error}</p>
+              </div>
+              <button
+                onClick={() => {
+                  setError(null)
+                  if (organizationId) {
+                    fetchReports(organizationId)
+                  } else {
+                    fetchOrganizationAndReports()
+                  }
+                }}
+                className="ml-4 text-sm text-red-600 hover:text-red-800 font-medium"
+              >
+                Try Again
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Content */}
         {activeTab === 'templates' ? (
           /* Report Templates */
@@ -322,6 +358,14 @@ export default function ReportsPage() {
                     <p className="text-gray-600 text-sm mb-4">
                       {template.description}
                     </p>
+                    <div className="space-y-2 mb-4">
+                      {template.dataPoints.map((point, index) => (
+                        <div key={index} className="flex items-center text-sm text-gray-500">
+                          <CheckCircle className="h-3 w-3 text-green-500 mr-2" />
+                          {point}
+                        </div>
+                      ))}
+                    </div>
                     <div className="flex items-center justify-between">
                       <div className="text-sm text-gray-500">
                         <Clock className="h-4 w-4 inline mr-1" />
@@ -329,8 +373,8 @@ export default function ReportsPage() {
                       </div>
                       <button
                         onClick={() => handleGenerateReport(template.id)}
-                        disabled={generating === template.id}
-                        className="px-4 py-2 text-sm font-medium text-blue-600 border border-blue-600 rounded-md hover:bg-blue-50 disabled:opacity-50"
+                        disabled={generating === template.id || !organizationId}
+                        className="px-4 py-2 text-sm font-medium text-blue-600 border border-blue-600 rounded-md hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {generating === template.id ? (
                           <>
@@ -417,7 +461,10 @@ export default function ReportsPage() {
                         </span>
                       </div>
                       {report.status === 'completed' && report.downloadUrl && (
-                        <button className="flex items-center px-3 py-2 text-sm font-medium text-blue-600 border border-blue-600 rounded-md hover:bg-blue-50">
+                        <button 
+                          onClick={() => window.open(report.downloadUrl, '_blank')}
+                          className="flex items-center px-3 py-2 text-sm font-medium text-blue-600 border border-blue-600 rounded-md hover:bg-blue-50"
+                        >
                           <Download className="h-4 w-4 mr-2" />
                           Download
                         </button>

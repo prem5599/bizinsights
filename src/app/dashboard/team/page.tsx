@@ -42,6 +42,8 @@ export default function TeamPage() {
   const [pendingInvitations, setPendingInvitations] = useState<PendingInvitation[]>([])
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [organizationId, setOrganizationId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const [inviteForm, setInviteForm] = useState({
     email: '',
     role: 'member'
@@ -49,115 +51,234 @@ export default function TeamPage() {
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null)
 
   useEffect(() => {
-    fetchTeamData()
-  }, [])
+    if (session?.user?.id) {
+      fetchOrganizationAndTeamData()
+    }
+  }, [session?.user?.id])
 
-  const fetchTeamData = async () => {
+  const fetchOrganizationAndTeamData = async () => {
     try {
       setIsLoading(true)
-      // Mock data - replace with actual API calls
-      setTeamMembers([
-        {
-          id: '1',
-          name: 'John Doe',
-          email: 'john@company.com',
-          role: 'owner',
-          status: 'active',
-          joinedAt: '2024-01-15',
-          lastActive: '2 minutes ago',
-          avatar: '/avatars/john.jpg'
-        },
-        {
-          id: '2',
-          name: 'Sarah Smith',
-          email: 'sarah@company.com',
-          role: 'admin',
-          status: 'active',
-          joinedAt: '2024-02-20',
-          lastActive: '1 hour ago',
-          avatar: '/avatars/sarah.jpg'
-        },
-        {
-          id: '3',
-          name: 'Mike Johnson',
-          email: 'mike@company.com',
-          role: 'member',
-          status: 'active',
-          joinedAt: '2024-03-10',
-          lastActive: '3 days ago'
-        }
-      ])
-
-      setPendingInvitations([
-        {
-          id: '1',
-          email: 'pending@company.com',
-          role: 'member',
-          invitedBy: 'John Doe',
-          invitedAt: '2024-07-08',
-          expiresAt: '2024-07-15'
-        }
-      ])
+      setError(null)
+      
+      // First, get the current organization
+      const orgResponse = await fetch('/api/organizations/current')
+      if (!orgResponse.ok) {
+        throw new Error('Failed to fetch organization')
+      }
+      
+      const orgData = await orgResponse.json()
+      const currentOrgId = orgData.organization.id
+      setOrganizationId(currentOrgId)
+      
+      // Then fetch team data
+      await fetchTeamData(currentOrgId)
     } catch (error) {
-      console.error('Failed to fetch team data:', error)
-      alert('Failed to load team data')
+      console.error('Failed to fetch organization and team data:', error)
+      setError('Failed to load team data')
     } finally {
       setIsLoading(false)
     }
   }
 
+  const fetchTeamData = async (orgId: string) => {
+    try {
+      const response = await fetch(`/api/organizations/${orgId}/team`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch team data')
+      }
+      
+      const data = await response.json()
+      
+      // Transform the data to match the expected format
+      const transformedMembers = data.members.map((member: any) => ({
+        id: member.id,
+        name: member.user.name || member.user.email,
+        email: member.user.email,
+        role: member.role,
+        status: 'active', // Default status
+        joinedAt: member.createdAt,
+        lastActive: getRelativeTime(member.createdAt), // Fallback to joined time
+        avatar: member.user.image
+      }))
+      
+      const transformedInvitations = data.invitations.map((invitation: any) => ({
+        id: invitation.id,
+        email: invitation.email,
+        role: invitation.role,
+        invitedBy: 'Team Admin', // Could be improved to show actual inviter name
+        invitedAt: invitation.createdAt,
+        expiresAt: invitation.expiresAt
+      }))
+      
+      setTeamMembers(transformedMembers)
+      setPendingInvitations(transformedInvitations)
+    } catch (error) {
+      console.error('Failed to fetch team data:', error)
+      throw error
+    }
+  }
+
+  const getRelativeTime = (dateString: string): string => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffMinutes = Math.floor(diffMs / (1000 * 60))
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+
+    if (diffMinutes < 1) return 'Just now'
+    if (diffMinutes < 60) return `${diffMinutes}m ago`
+    if (diffHours < 24) return `${diffHours}h ago`
+    if (diffDays < 7) return `${diffDays}d ago`
+    return date.toLocaleDateString()
+  }
+
   const handleInviteSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
+    if (!organizationId) {
+      alert('Organization not loaded. Please try again.')
+      return
+    }
+    
     try {
-      // Replace with actual API call
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      const response = await fetch(`/api/organizations/${organizationId}/team`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'invite',
+          email: inviteForm.email,
+          role: inviteForm.role
+        })
+      })
+      
+      const data = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to send invitation')
+      }
       
       alert(`Invitation sent to ${inviteForm.email}`)
       setIsInviteDialogOpen(false)
       setInviteForm({ email: '', role: 'member' })
-      fetchTeamData()
+      
+      // Refresh team data
+      if (organizationId) {
+        await fetchTeamData(organizationId)
+      }
     } catch (error) {
-      alert('Failed to send invitation')
+      alert(error instanceof Error ? error.message : 'Failed to send invitation')
     }
   }
 
   const handleRoleChange = async (memberId: string, newRole: string) => {
+    if (!organizationId) {
+      alert('Organization not loaded. Please try again.')
+      return
+    }
+    
     try {
-      // Replace with actual API call
-      await new Promise(resolve => setTimeout(resolve, 500))
+      const response = await fetch(`/api/organizations/${organizationId}/team`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'update_role',
+          memberId,
+          newRole
+        })
+      })
       
-      setTeamMembers(prev => prev.map(member => 
-        member.id === memberId ? { ...member, role: newRole as any } : member
-      ))
+      const data = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to update role')
+      }
       
       alert('Role updated successfully')
+      
+      // Refresh team data
+      await fetchTeamData(organizationId)
     } catch (error) {
-      alert('Failed to update role')
+      alert(error instanceof Error ? error.message : 'Failed to update role')
     }
   }
 
   const handleRemoveMember = async (memberId: string) => {
+    if (!organizationId) {
+      alert('Organization not loaded. Please try again.')
+      return
+    }
+    
+    if (!confirm('Are you sure you want to remove this team member?')) {
+      return
+    }
+    
     try {
-      // Replace with actual API call
-      await new Promise(resolve => setTimeout(resolve, 500))
+      const response = await fetch(`/api/organizations/${organizationId}/team`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'remove_member',
+          memberId
+        })
+      })
       
-      setTeamMembers(prev => prev.filter(member => member.id !== memberId))
+      const data = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to remove team member')
+      }
+      
       alert('Team member removed')
+      
+      // Refresh team data
+      await fetchTeamData(organizationId)
     } catch (error) {
-      alert('Failed to remove team member')
+      alert(error instanceof Error ? error.message : 'Failed to remove team member')
     }
   }
 
   const handleCancelInvitation = async (invitationId: string) => {
+    if (!organizationId) {
+      alert('Organization not loaded. Please try again.')
+      return
+    }
+    
+    if (!confirm('Are you sure you want to cancel this invitation?')) {
+      return
+    }
+    
     try {
-      // Replace with actual API call
-      await new Promise(resolve => setTimeout(resolve, 500))
+      const response = await fetch(`/api/organizations/${organizationId}/team`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'cancel_invitation',
+          invitationId
+        })
+      })
       
-      setPendingInvitations(prev => prev.filter(inv => inv.id !== invitationId))
+      const data = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to cancel invitation')
+      }
+      
       alert('Invitation cancelled')
+      
+      // Refresh team data
+      await fetchTeamData(organizationId)
     } catch (error) {
-      alert('Failed to cancel invitation')
+      alert(error instanceof Error ? error.message : 'Failed to cancel invitation')
     }
   }
 
@@ -203,6 +324,25 @@ export default function TeamPage() {
             {[...Array(3)].map((_, i) => (
               <div key={i} className="h-16 bg-gray-200 rounded animate-pulse"></div>
             ))}
+          </div>
+        </div>
+      </DashboardLayout>
+    )
+  }
+
+  if (error) {
+    return (
+      <DashboardLayout>
+        <div className="space-y-6">
+          <div className="text-center py-12">
+            <h2 className="text-xl font-semibold text-red-600 mb-2">Error Loading Team</h2>
+            <p className="text-gray-600 mb-4">{error}</p>
+            <button
+              onClick={fetchOrganizationAndTeamData}
+              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+            >
+              Try Again
+            </button>
           </div>
         </div>
       </DashboardLayout>

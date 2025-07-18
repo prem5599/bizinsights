@@ -14,6 +14,7 @@ import {
   HelpCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SearchInterface } from "@/components/search/SearchInterface";
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -23,7 +24,6 @@ export function Header({ onMenuClick }: HeaderProps) {
   const { data: session } = useSession();
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [searchFocused, setSearchFocused] = useState(false);
 
   const profileDropdownRef = useRef<HTMLDivElement>(null);
   const notificationsRef = useRef<HTMLDivElement>(null);
@@ -87,29 +87,7 @@ export function Header({ onMenuClick }: HeaderProps) {
 
             {/* Search bar */}
             <div className="ml-4 flex-1 max-w-lg">
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                  <Search
-                    className={cn(
-                      "h-4 w-4 transition-colors duration-200",
-                      searchFocused ? "text-blue-500" : "text-slate-400"
-                    )}
-                  />
-                </div>
-                <input
-                  type="text"
-                  placeholder="Search insights, reports, data..."
-                  className={cn(
-                    "block w-full rounded-lg border pl-10 pr-3 py-2 text-sm transition-all duration-200",
-                    "placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500",
-                    searchFocused
-                      ? "border-blue-300 bg-white shadow-sm"
-                      : "border-slate-300 bg-slate-50 hover:bg-white"
-                  )}
-                  onFocus={() => setSearchFocused(true)}
-                  onBlur={() => setSearchFocused(false)}
-                />
-              </div>
+              <SearchInterface className="w-full" />
             </div>
           </div>
 
