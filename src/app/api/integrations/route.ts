@@ -5,6 +5,8 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+export const dynamic = 'force-dynamic'
+
 const createIntegrationSchema = z.object({
   platform: z.enum(['shopify', 'stripe', 'google_analytics', 'facebook_ads', 'mailchimp']),
   organizationId: z.string().cuid(),

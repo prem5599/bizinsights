@@ -5,6 +5,8 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { ShopifyIntegration } from '@/lib/integrations/shopify'
 
+export const dynamic = 'force-dynamic'
+
 /**
  * GET /api/integrations/[integrationId]/sync
  * Get current sync status using existing schema

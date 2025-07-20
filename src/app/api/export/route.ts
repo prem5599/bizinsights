@@ -17,6 +17,8 @@ import {
   formatExportData
 } from '@/lib/export/exportUtils'
 
+export const dynamic = 'force-dynamic'
+
 interface DateRange {
   start: Date
   end: Date

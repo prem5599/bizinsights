@@ -7,6 +7,8 @@ import { ReportGenerator } from '@/lib/reports/generator'
 import { ReportEmailer } from '@/lib/reports/emailer'
 import { TeamManager } from '@/lib/team/manager'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ orgId: string }> }

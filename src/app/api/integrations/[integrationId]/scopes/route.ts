@@ -5,6 +5,8 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { ShopifyScopeManager } from '@/lib/integrations/shopify-scopes'
 
+export const dynamic = 'force-dynamic'
+
 /**
  * GET /api/integrations/[integrationId]/scopes
  * Get current scope configuration for an integration

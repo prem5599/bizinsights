@@ -5,6 +5,8 @@ import { ReportEmailer } from '@/lib/reports/emailer'
 import { InsightsScheduler } from '@/lib/insights/scheduler'
 import { prisma } from '@/lib/prisma'
 
+export const dynamic = 'force-dynamic'
+
 export async function POST(req: NextRequest) {
   try {
     // This endpoint would be called by a cron job or scheduled task
