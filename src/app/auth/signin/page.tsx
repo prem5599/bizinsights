@@ -116,13 +116,14 @@ function SignInForm() {
         }
       } else if (result?.ok) {
         console.log('✅ Sign-in successful, redirecting...')
-        // Redirect to dashboard or callback URL
-        if (result.url) {
-          router.push(result.url)
-        } else {
-          router.push(callbackUrl)
-        }
-        router.refresh()
+        // Add a small delay before redirect to ensure session is set
+        setTimeout(() => {
+          if (result.url) {
+            window.location.href = result.url
+          } else {
+            window.location.href = callbackUrl
+          }
+        }, 100)
       } else {
         setError('Unexpected error occurred. Please try again.')
       }
@@ -226,7 +227,7 @@ function SignInForm() {
                 value={formData.email}
                 onChange={handleInputChange}
                 className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="prem5599@gmail.com"
+                placeholder="test@example.com"
               />
             </div>
 
@@ -243,7 +244,7 @@ function SignInForm() {
                 value={formData.password}
                 onChange={handleInputChange}
                 className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="••••••••"
+                placeholder="123456"
               />
             </div>
 
@@ -274,7 +275,7 @@ function SignInForm() {
 
           <div className="text-center">
             <p className="text-sm text-gray-600">
-              Debug: Callback URL = /dashboard
+              Debug: Use test@example.com / 123456 to login
             </p>
           </div>
         </div>

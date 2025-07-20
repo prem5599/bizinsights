@@ -290,7 +290,7 @@ export const authOptions: NextAuthOptions = {
       // Can be used for logging or analytics
     }
   },
-  debug: process.env.NODE_ENV === 'development', // Enable debug in development
+  debug: true, // Enable debug to see what's happening
   logger: {
     error(code, metadata) {
       console.error(`❌ NextAuth Error [${code}]:`, metadata)

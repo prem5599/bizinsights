@@ -25,7 +25,8 @@
       "Bash(find:*)",
       "Bash(curl:*)",
       "Bash(ls:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(npm run:*)"
     ],
     "deny": []
   }
