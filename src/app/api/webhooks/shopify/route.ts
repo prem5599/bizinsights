@@ -399,10 +399,10 @@ export async function POST(req: NextRequest) {
       await prisma.integration.update({
         where: {
           id: integration.id
-        }),
+        },
         data: {
           lastSyncAt: new Date()
-        })
+        }
       })
 
       return NextResponse.json({ success: true, topic, externalId })
