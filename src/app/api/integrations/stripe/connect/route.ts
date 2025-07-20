@@ -70,13 +70,13 @@ export async function POST(req: NextRequest) {
           platformAccountId: accountInfo.id,
           status: 'active',
           lastSyncAt: new Date(),
-          metadata: {
+          metadata: JSON.stringify({
             accountId: accountInfo.id,
             displayName: accountInfo.display_name || accountInfo.business_profile?.name,
             country: accountInfo.country,
             currency: accountInfo.default_currency,
             connectedAt: new Date().toISOString()
-          }
+          })
         }
       })
     } else {
@@ -89,13 +89,13 @@ export async function POST(req: NextRequest) {
           accessToken: secretKey,
           status: 'active',
           lastSyncAt: new Date(),
-          metadata: {
+          metadata: JSON.stringify({
             accountId: accountInfo.id,
             displayName: accountInfo.display_name || accountInfo.business_profile?.name,
             country: accountInfo.country,
             currency: accountInfo.default_currency,
             connectedAt: new Date().toISOString()
-          }
+          })
         }
       })
     }

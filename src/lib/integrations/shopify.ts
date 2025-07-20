@@ -437,7 +437,7 @@ export class ShopifyIntegration {
               integrationId,
               metricType: 'revenue',
               value: parseFloat(order.total_price || '0'),
-              metadata: {
+              metadata: JSON.stringify({
                 orderId: order.id,
                 orderNumber: order.number,
                 customerId: order.customer?.id,
@@ -447,7 +447,7 @@ export class ShopifyIntegration {
                 itemCount: order.line_items?.length || 0,
                 customerEmail: order.customer?.email || order.email,
                 source: 'shopify_sync'
-              },
+              }),
               dateRecorded: new Date(order.created_at)
             }
           })
@@ -459,7 +459,7 @@ export class ShopifyIntegration {
             integrationId,
             metricType: 'orders',
             value: 1,
-            metadata: {
+            metadata: JSON.stringify({
               orderId: order.id,
               orderNumber: order.number,
               customerId: order.customer?.id,
@@ -468,7 +468,7 @@ export class ShopifyIntegration {
               financialStatus: order.financial_status,
               fulfillmentStatus: order.fulfillment_status,
               source: 'shopify_sync'
-            },
+            }),
             dateRecorded: new Date(order.created_at)
           }
         })
@@ -501,7 +501,7 @@ export class ShopifyIntegration {
             integrationId,
             metricType: 'customer_created',
             value: 1,
-            metadata: {
+            metadata: JSON.stringify({
               customerId: customer.id,
               email: customer.email,
               firstName: customer.first_name,
@@ -512,7 +512,7 @@ export class ShopifyIntegration {
               state: customer.state,
               tags: customer.tags,
               source: 'shopify_sync'
-            },
+            }),
             dateRecorded: new Date(customer.created_at)
           }
         })
@@ -545,7 +545,7 @@ export class ShopifyIntegration {
             integrationId,
             metricType: 'product_created',
             value: 1,
-            metadata: {
+            metadata: JSON.stringify({
               productId: product.id,
               title: product.title,
               vendor: product.vendor,
@@ -554,7 +554,7 @@ export class ShopifyIntegration {
               variantsCount: product.variants?.length || 0,
               publishedAt: product.published_at,
               source: 'shopify_sync'
-            },
+            }),
             dateRecorded: new Date(product.created_at)
           }
         })
@@ -679,7 +679,7 @@ async function processOrderCreated(
     integrationId,
     metricType: 'orders',
     value: 1,
-    metadata: {
+    metadata: JSON.stringify({
       orderId: order.id,
       orderNumber: order.number,
       customerId: order.customer?.id,
@@ -688,7 +688,7 @@ async function processOrderCreated(
       financialStatus: order.financial_status,
       fulfillmentStatus: order.fulfillment_status,
       source: 'shopify_webhook'
-    },
+    }),
     dateRecorded: new Date(order.created_at)
   })
 
@@ -698,14 +698,14 @@ async function processOrderCreated(
       integrationId,
       metricType: 'revenue',
       value: parseFloat(order.total_price || '0'),
-      metadata: {
+      metadata: JSON.stringify({
         orderId: order.id,
         orderNumber: order.number,
         customerId: order.customer?.id,
         currency: order.currency,
         financialStatus: order.financial_status,
         source: 'shopify_webhook'
-      },
+      }),
       dateRecorded: new Date(order.created_at)
     })
   }
@@ -735,17 +735,17 @@ async function processOrderUpdated(
 
   // Update existing data points
   for (const dataPoint of existingDataPoints) {
-    const metadata = dataPoint.metadata as any
+    const metadata = typeof dataPoint.metadata === 'string' ? JSON.parse(dataPoint.metadata) : dataPoint.metadata
     await prisma.dataPoint.update({
       where: { id: dataPoint.id },
       data: {
-        metadata: {
+        metadata: JSON.stringify({
           ...metadata,
           financialStatus: order.financial_status,
           fulfillmentStatus: order.fulfillment_status,
           updatedAt: order.updated_at,
           source: 'shopify_webhook'
-        }
+        })
       }
     })
     processed++
@@ -759,14 +759,14 @@ async function processOrderUpdated(
         integrationId,
         metricType: 'revenue',
         value: parseFloat(order.total_price || '0'),
-        metadata: {
+        metadata: JSON.stringify({
           orderId: order.id,
           orderNumber: order.number,
           customerId: order.customer?.id,
           currency: order.currency,
           financialStatus: order.financial_status,
           source: 'shopify_webhook'
-        },
+        }),
         dateRecorded: new Date(order.updated_at)
       }
     })
@@ -785,14 +785,14 @@ async function processOrderPaid(
       integrationId,
       metricType: 'order_paid',
       value: parseFloat(order.total_price || '0'),
-      metadata: {
+      metadata: JSON.stringify({
         orderId: order.id,
         orderNumber: order.number,
         customerId: order.customer?.id,
         currency: order.currency,
         financialStatus: order.financial_status,
         source: 'shopify_webhook'
-      },
+      }),
       dateRecorded: new Date()
     }
   })
@@ -809,7 +809,7 @@ async function processOrderCancelled(
       integrationId,
       metricType: 'order_cancelled',
       value: parseFloat(order.total_price || '0'),
-      metadata: {
+      metadata: JSON.stringify({
         orderId: order.id,
         orderNumber: order.number,
         customerId: order.customer?.id,
@@ -817,7 +817,7 @@ async function processOrderCancelled(
         cancelledAt: order.cancelled_at,
         cancelReason: order.cancel_reason,
         source: 'shopify_webhook'
-      },
+      }),
       dateRecorded: new Date()
     }
   })
@@ -834,13 +834,13 @@ async function processOrderFulfilled(
       integrationId,
       metricType: 'order_fulfilled',
       value: 1,
-      metadata: {
+      metadata: JSON.stringify({
         orderId: order.id,
         orderNumber: order.number,
         customerId: order.customer?.id,
         fulfillmentStatus: order.fulfillment_status,
         source: 'shopify_webhook'
-      },
+      }),
       dateRecorded: new Date()
     }
   })
@@ -857,13 +857,13 @@ async function processOrderRefunded(
       integrationId,
       metricType: 'order_refunded',
       value: parseFloat(order.total_price || '0'),
-      metadata: {
+      metadata: JSON.stringify({
         orderId: order.id,
         orderNumber: order.number,
         customerId: order.customer?.id,
         currency: order.currency,
         source: 'shopify_webhook'
-      },
+      }),
       dateRecorded: new Date()
     }
   })
@@ -880,14 +880,14 @@ async function processCustomerCreated(
       integrationId,
       metricType: 'customer_created',
       value: 1,
-      metadata: {
+      metadata: JSON.stringify({
         customerId: customer.id,
         email: customer.email,
         firstName: customer.first_name,
         lastName: customer.last_name,
         acceptsMarketing: customer.accepts_marketing,
         source: 'shopify_webhook'
-      },
+      }),
       dateRecorded: new Date(customer.created_at)
     }
   })
@@ -904,7 +904,7 @@ async function processCustomerUpdated(
       integrationId,
       metricType: 'customer_updated',
       value: 1,
-      metadata: {
+      metadata: JSON.stringify({
         customerId: customer.id,
         email: customer.email,
         firstName: customer.first_name,
@@ -912,7 +912,7 @@ async function processCustomerUpdated(
         ordersCount: customer.orders_count,
         totalSpent: customer.total_spent,
         source: 'shopify_webhook'
-      },
+      }),
       dateRecorded: new Date()
     }
   })
@@ -931,11 +931,11 @@ async function processAppUninstalled(
       status: 'disconnected',
       accessToken: null,
       refreshToken: null,
-      metadata: {
+      metadata: JSON.stringify({
         uninstalledAt: new Date().toISOString(),
         uninstallReason: 'app_uninstalled',
         finalShopData: webhookData
-      }
+      })
     }
   })
 
@@ -945,12 +945,12 @@ async function processAppUninstalled(
       integrationId,
       metricType: 'integration_uninstalled',
       value: 1,
-      metadata: {
+      metadata: JSON.stringify({
         platform: 'shopify',
         reason: 'app_uninstalled',
         shopDomain: webhookData.domain,
         source: 'shopify_webhook'
-      },
+      }),
       dateRecorded: new Date()
     }
   })

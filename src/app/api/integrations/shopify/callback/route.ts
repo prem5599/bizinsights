@@ -188,8 +188,8 @@ export async function GET(req: NextRequest) {
           accessToken: tokenResponse.access_token,
           status: 'active',
           platformAccountId: shopInfo.shop.myshopify_domain,
-          metadata: {
-            ...integration.metadata as any,
+          metadata: JSON.stringify({
+            ...(typeof integration.metadata === 'string' ? JSON.parse(integration.metadata) : integration.metadata),
             shopInfo: {
               id: shopInfo.shop.id,
               name: shopInfo.shop.name,
@@ -208,7 +208,7 @@ export async function GET(req: NextRequest) {
               createdAt: webhook.created_at
             })),
             connectedAt: new Date().toISOString()
-          },
+          }),
           lastSyncAt: new Date()
         }
       })
@@ -232,13 +232,13 @@ export async function GET(req: NextRequest) {
         },
         data: {
           status: 'error',
-          metadata: {
-            ...integration.metadata as any,
+          metadata: JSON.stringify({
+            ...(typeof integration.metadata === 'string' ? JSON.parse(integration.metadata) : integration.metadata),
             error: {
               message: tokenError instanceof Error ? tokenError.message : 'Unknown error',
               timestamp: new Date().toISOString()
             }
-          }
+          })
         }
       })
 

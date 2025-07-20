@@ -96,10 +96,28 @@ export async function POST(req: NextRequest) {
 
   } catch (error) {
     console.error('Generate insights error:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate insights', details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    )
+    
+    // Ensure we always return a proper error structure
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+    const errorDetails = {
+      error: 'Failed to generate insights',
+      message: errorMessage,
+      details: error instanceof Error ? {
+        name: error.name,
+        message: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      } : error,
+      timestamp: new Date().toISOString()
+    }
+    
+    console.error('Returning error response:', errorDetails)
+    
+    return NextResponse.json(errorDetails, { 
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    })
   }
 }
 

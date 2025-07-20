@@ -623,10 +623,10 @@ export class GoogleAnalyticsIntegration {
           integrationId,
           metricType: 'sessions',
           value: sessions,
-          metadata: {
+          metadata: JSON.stringify({
             date,
             source: 'google_analytics_sync'
-          },
+          }),
           dateRecorded
         })
 
@@ -635,11 +635,11 @@ export class GoogleAnalyticsIntegration {
           integrationId,
           metricType: 'users',
           value: users,
-          metadata: {
+          metadata: JSON.stringify({
             date,
             newUsers,
             source: 'google_analytics_sync'
-          },
+          }),
           dateRecorded
         })
 
@@ -648,12 +648,12 @@ export class GoogleAnalyticsIntegration {
           integrationId,
           metricType: 'pageviews',
           value: pageviews,
-          metadata: {
+          metadata: JSON.stringify({
             date,
             avgSessionDuration,
             bounceRate,
             source: 'google_analytics_sync'
-          },
+          }),
           dateRecorded
         })
       }

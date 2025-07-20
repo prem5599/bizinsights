@@ -138,12 +138,12 @@ async function processOrderWebhook(
         metricType: 'orders',
         value: 1,
         dateRecorded,
-        metadata: {
+        metadata: JSON.stringify({
           orderId: order.id,
           orderName: order.name,
           currency: order.currency,
           fulfillmentStatus: order.fulfillment_status
-        }
+        })
       }
     })
 
@@ -154,11 +154,11 @@ async function processOrderWebhook(
         metricType: 'order_value',
         value: orderValue,
         dateRecorded,
-        metadata: {
+        metadata: JSON.stringify({
           orderId: order.id,
           orderName: order.name,
           currency: order.currency
-        }
+        })
       }
     })
   }
@@ -171,14 +171,14 @@ async function processOrderWebhook(
         metricType: 'revenue',
         value: orderValue,
         dateRecorded: new Date(), // Use current time for when payment was received
-        metadata: {
+        metadata: JSON.stringify({
           orderId: order.id,
           orderName: order.name,
           originalOrderDate: order.created_at,
           currency: order.currency,
           subtotal: order.subtotal_price,
           tax: order.total_tax
-        }
+        })
       }
     })
   }
@@ -191,13 +191,13 @@ async function processOrderWebhook(
         metricType: 'orders_cancelled',
         value: 1,
         dateRecorded: new Date(order.cancelled_at!),
-        metadata: {
+        metadata: JSON.stringify({
           orderId: order.id,
           orderName: order.name,
           originalOrderDate: order.created_at,
           cancelledOrderValue: orderValue,
           currency: order.currency
-        }
+        })
       }
     })
   }
@@ -239,13 +239,13 @@ async function processCustomerData(
         metricType: 'customers',
         value: 1,
         dateRecorded,
-        metadata: {
+        metadata: JSON.stringify({
           customerId: customer.id,
           email: customer.email,
           firstName: customer.first_name,
           lastName: customer.last_name,
           acceptsMarketing: customer.accepts_marketing
-        }
+        })
       }
     })
   }
@@ -259,12 +259,12 @@ async function processCustomerData(
         metricType: 'customer_lifetime_value',
         value: totalSpent,
         dateRecorded: new Date(), // Use current time for LTV updates
-        metadata: {
+        metadata: JSON.stringify({
           customerId: customer.id,
           email: customer.email,
           ordersCount: customer.orders_count,
           currency: customer.currency || 'USD'
-        }
+        })
       }
     })
   }
@@ -278,10 +278,10 @@ async function processAppUninstalled(integration: any): Promise<void> {
     },
     data: {
       status: 'inactive',
-      metadata: {
-        ...integration.metadata,
+      metadata: JSON.stringify({
+        ...(typeof integration.metadata === 'string' ? JSON.parse(integration.metadata) : integration.metadata),
         uninstalledAt: new Date().toISOString()
-      }
+      })
     }
   })
 
@@ -399,10 +399,10 @@ export async function POST(req: NextRequest) {
       await prisma.integration.update({
         where: {
           id: integration.id
-        },
+        }),
         data: {
           lastSyncAt: new Date()
-        }
+        })
       })
 
       return NextResponse.json({ success: true, topic, externalId })

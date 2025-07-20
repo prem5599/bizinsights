@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
           error: `Invalid shop domain format. Please use formats like: mystore.myshopify.com, mystore.com, or just mystore`,
           processed: cleanShopDomain,
           original: shopDomain
-        },
+        }),
         { status: 400 }
       )
     }
@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
         { 
           error: 'Shopify OAuth not configured. Please use Private App method instead.',
           suggestion: 'Configure SHOPIFY_CLIENT_ID and SHOPIFY_CLIENT_SECRET in your .env file for OAuth, or use the Private App connection method.'
-        },
+        }),
         { status: 400 }
       )
     }
@@ -114,11 +114,11 @@ export async function POST(request: NextRequest) {
         accessToken: null,
         status: 'pending',
         lastSyncAt: null,
-        metadata: {
+        metadata: JSON.stringify({
           oauthState: state,
           pendingOAuth: true,
           createdAt: new Date().toISOString()
-        }
+        })
       }
     })
 

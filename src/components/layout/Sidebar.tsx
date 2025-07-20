@@ -50,7 +50,7 @@ export function Sidebar({ onClose }: SidebarProps) {
       {/* Close button for mobile */}
       {onClose && (
         <div className="flex items-center justify-between lg:hidden">
-          <h1 className="text-xl font-bold text-blue-600">BizInsights</h1>
+          {/* <h1 className="text-xl font-bold text-blue-600">BizInsights</h1> */}
           <button
             type="button"
             className="rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-500"
@@ -62,9 +62,9 @@ export function Sidebar({ onClose }: SidebarProps) {
       )}
 
       {/* Logo for desktop */}
-      <div className="hidden lg:flex lg:items-center">
+      {/* <div className="hidden lg:flex lg:items-center">
         <h1 className="text-xl font-bold text-blue-600">BizInsights</h1>
-      </div>
+      </div> */}
 
       {/* Organization selector */}
       <div className="relative">

@@ -884,7 +884,7 @@ export class InsightsEngine {
         description: insight.description,
         impactScore: insight.impactScore,
         isRead: false,
-        metadata: insight.metadata
+        metadata: JSON.stringify(insight.metadata)
       }))
     })
   }

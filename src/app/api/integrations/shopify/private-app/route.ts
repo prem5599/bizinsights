@@ -177,10 +177,10 @@ export async function POST(request: NextRequest) {
         accessToken: accessToken.trim(),
         status: 'active',
         lastSyncAt: null,
-        metadata: {
+        metadata: JSON.stringify({
           type: 'private_app',
           connectedAt: new Date().toISOString()
-        }
+        })
       }
     })
 
@@ -200,11 +200,11 @@ export async function POST(request: NextRequest) {
         where: { id: integration.id },
         data: {
           lastSyncAt: new Date(),
-          metadata: {
+          metadata: JSON.stringify({
             type: 'private_app',
             connectedAt: new Date().toISOString(),
             initialSync: syncResult
-          }
+          })
         }
       })
       

@@ -72,13 +72,13 @@ export async function POST(req: NextRequest) {
           status: 'active',
           lastSyncAt: new Date(),
           tokenExpiresAt: new Date(Date.now() + 3600 * 1000), // 1 hour
-          metadata: {
+          metadata: JSON.stringify({
             propertyId,
             propertyName: propertyInfo.displayName,
             timeZone: propertyInfo.timeZone,
             currencyCode: propertyInfo.currencyCode,
             connectedAt: new Date().toISOString()
-          }
+          })
         }
       })
     } else {
@@ -93,13 +93,13 @@ export async function POST(req: NextRequest) {
           status: 'active',
           lastSyncAt: new Date(),
           tokenExpiresAt: new Date(Date.now() + 3600 * 1000), // 1 hour
-          metadata: {
+          metadata: JSON.stringify({
             propertyId,
             propertyName: propertyInfo.displayName,
             timeZone: propertyInfo.timeZone,
             currencyCode: propertyInfo.currencyCode,
             connectedAt: new Date().toISOString()
-          }
+          })
         }
       })
     }

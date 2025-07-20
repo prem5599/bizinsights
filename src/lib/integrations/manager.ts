@@ -69,7 +69,7 @@ export class IntegrationManager {
           return {
             success: false,
             error: `Unsupported platform: ${integration.platform}`
-          }
+          })
       }
 
       // Update last sync time
@@ -122,11 +122,11 @@ export class IntegrationManager {
           status: 'inactive',
           accessToken: null,
           refreshToken: null,
-          metadata: {
-            ...(integration.metadata as any || {}),
+          metadata: JSON.stringify({
+            ...(typeof integration.metadata === 'string' ? JSON.parse(integration.metadata) : integration.metadata) || {},
             disconnectedAt: new Date().toISOString(),
             disconnectReason: reason || 'manual_disconnect'
-          }
+          })
         }
       })
 
@@ -220,7 +220,7 @@ export class IntegrationManager {
             metrics: [{ expression: 'ga:sessions' }],
             dimensions: [{ name: 'ga:date' }],
             pageSize: 1
-          }]
+          })]
         })
       })
 
@@ -245,7 +245,7 @@ export class IntegrationManager {
           headers: {
             'X-Shopify-Access-Token': integration.accessToken,
             'Content-Type': 'application/json'
-          }
+          })
         }
       )
 
@@ -259,16 +259,16 @@ export class IntegrationManager {
               integrationId: integration.id,
               metricType: 'revenue',
               value: parseFloat(order.total_price || '0'),
-              metadata: {
+              metadata: JSON.stringify({
                 orderId: order.id,
                 orderNumber: order.order_number,
                 currency: order.currency,
                 customerEmail: order.email,
                 source: 'shopify_sync'
-              },
+              }),
               dateRecorded: new Date(order.created_at)
-            }
-          })
+            })
+          }))
 
           // Create orders data point
           await prisma.dataPoint.create({
@@ -276,15 +276,15 @@ export class IntegrationManager {
               integrationId: integration.id,
               metricType: 'orders',
               value: 1,
-              metadata: {
+              metadata: JSON.stringify({
                 orderId: order.id,
                 orderNumber: order.order_number,
                 status: order.financial_status,
                 source: 'shopify_sync'
-              },
+              }),
               dateRecorded: new Date(order.created_at)
-            }
-          })
+            })
+          }))
 
           syncedCount += 2
         }
@@ -297,7 +297,7 @@ export class IntegrationManager {
           headers: {
             'X-Shopify-Access-Token': integration.accessToken,
             'Content-Type': 'application/json'
-          }
+          })
         }
       )
 
@@ -310,16 +310,16 @@ export class IntegrationManager {
               integrationId: integration.id,
               metricType: 'customers',
               value: 1,
-              metadata: {
+              metadata: JSON.stringify({
                 customerId: customer.id,
                 email: customer.email,
                 firstName: customer.first_name,
                 lastName: customer.last_name,
                 source: 'shopify_sync'
-              },
+              }),
               dateRecorded: new Date(customer.created_at)
-            }
-          })
+            })
+          }))
 
           syncedCount++
         }
@@ -353,7 +353,7 @@ export class IntegrationManager {
           headers: {
             'Authorization': `Bearer ${integration.accessToken}`,
             'Content-Type': 'application/x-www-form-urlencoded'
-          }
+          })
         }
       )
 
@@ -367,18 +367,18 @@ export class IntegrationManager {
                 integrationId: integration.id,
                 metricType: 'revenue',
                 value: charge.amount / 100, // Convert cents to dollars
-                metadata: {
+                metadata: JSON.stringify({
                   chargeId: charge.id,
                   currency: charge.currency,
                   customerId: charge.customer,
                   source: 'stripe_sync'
-                },
+                }),
                 dateRecorded: new Date(charge.created * 1000)
-              }
-            })
+              })
+            }))
 
             syncedCount++
-          }
+          })
         }
       }
 
@@ -389,7 +389,7 @@ export class IntegrationManager {
           headers: {
             'Authorization': `Bearer ${integration.accessToken}`,
             'Content-Type': 'application/x-www-form-urlencoded'
-          }
+          })
         }
       )
 
@@ -402,15 +402,15 @@ export class IntegrationManager {
               integrationId: integration.id,
               metricType: 'customers',
               value: 1,
-              metadata: {
+              metadata: JSON.stringify({
                 customerId: customer.id,
                 email: customer.email,
                 name: customer.name,
                 source: 'stripe_sync'
-              },
+              }),
               dateRecorded: new Date(customer.created * 1000)
-            }
-          })
+            })
+          }))
 
           syncedCount++
         }
@@ -453,7 +453,7 @@ export class IntegrationManager {
               { expression: 'ga:pageviews' }
             ],
             dimensions: [{ name: 'ga:date' }]
-          }]
+          })]
         })
       })
 
@@ -474,42 +474,42 @@ export class IntegrationManager {
                 integrationId: integration.id,
                 metricType: 'sessions',
                 value: sessions,
-                metadata: {
+                metadata: JSON.stringify({
                   source: 'google_analytics_sync',
                   date: date
-                },
+                }),
                 dateRecorded: new Date(date.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'))
-              }
-            })
+              })
+            }))
 
             await prisma.dataPoint.create({
               data: {
                 integrationId: integration.id,
                 metricType: 'users',
                 value: users,
-                metadata: {
+                metadata: JSON.stringify({
                   source: 'google_analytics_sync',
                   date: date
-                },
+                }),
                 dateRecorded: new Date(date.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'))
-              }
-            })
+              })
+            }))
 
             await prisma.dataPoint.create({
               data: {
                 integrationId: integration.id,
                 metricType: 'pageviews',
                 value: pageviews,
-                metadata: {
+                metadata: JSON.stringify({
                   source: 'google_analytics_sync',
                   date: date
-                },
+                }),
                 dateRecorded: new Date(date.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'))
-              }
-            })
+              })
+            }))
 
             syncedCount += 3
-          }
+          })
         }
       }
 

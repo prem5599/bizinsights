@@ -305,9 +305,37 @@ export default function InsightsPage() {
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        console.error('Insights generation failed:', errorData)
-        throw new Error(errorData.error || 'Failed to generate insights')
+        let errorData
+        let errorMessage = 'Failed to generate insights'
+        
+        try {
+          const responseText = await response.text()
+          console.log('Raw error response:', responseText)
+          
+          if (responseText) {
+            try {
+              errorData = JSON.parse(responseText)
+              errorMessage = errorData.error || errorData.message || 'Failed to generate insights'
+            } catch (parseError) {
+              console.error('Failed to parse error response as JSON:', parseError)
+              errorMessage = `Server error: ${responseText}`
+            }
+          } else {
+            errorMessage = `HTTP ${response.status}: ${response.statusText}`
+          }
+        } catch (textError) {
+          console.error('Failed to read error response:', textError)
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`
+        }
+        
+        console.error('Insights generation failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorData,
+          errorMessage
+        })
+        
+        throw new Error(errorMessage)
       }
 
       const result = await response.json()

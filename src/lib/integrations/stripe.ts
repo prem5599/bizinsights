@@ -414,7 +414,7 @@ export class StripeIntegration {
               integrationId,
               metricType: 'revenue',
               value: charge.amount / 100, // Convert cents to dollars
-              metadata: {
+              metadata: JSON.stringify({
                 chargeId: charge.id,
                 customerId: charge.customer,
                 currency: charge.currency,
@@ -422,7 +422,7 @@ export class StripeIntegration {
                 description: charge.description,
                 receiptEmail: charge.receipt_email,
                 source: 'stripe_sync'
-              },
+              }),
               dateRecorded: new Date(charge.created * 1000)
             }
           })
@@ -456,13 +456,13 @@ export class StripeIntegration {
             integrationId,
             metricType: 'customer_created',
             value: 1,
-            metadata: {
+            metadata: JSON.stringify({
               customerId: customer.id,
               email: customer.email,
               name: customer.name,
               subscriptionsCount: customer.subscriptions?.data?.length || 0,
               source: 'stripe_sync'
-            },
+            }),
             dateRecorded: new Date(customer.created * 1000)
           }
         })
@@ -497,7 +497,7 @@ export class StripeIntegration {
             integrationId,
             metricType: 'subscription_created',
             value: amount,
-            metadata: {
+            metadata: JSON.stringify({
               subscriptionId: subscription.id,
               customerId: subscription.customer,
               status: subscription.status,
@@ -505,7 +505,7 @@ export class StripeIntegration {
               interval: subscription.items.data[0]?.price?.recurring?.interval,
               currency: subscription.items.data[0]?.price?.currency,
               source: 'stripe_sync'
-            },
+            }),
             dateRecorded: new Date(subscription.created * 1000)
           }
         })
@@ -539,14 +539,14 @@ export class StripeIntegration {
               integrationId,
               metricType: 'invoice_paid',
               value: invoice.amount_paid / 100,
-              metadata: {
+              metadata: JSON.stringify({
                 invoiceId: invoice.id,
                 customerId: invoice.customer,
                 subscriptionId: invoice.subscription,
                 currency: invoice.currency,
                 status: invoice.status,
                 source: 'stripe_sync'
-              },
+              }),
               dateRecorded: new Date(invoice.created * 1000)
             }
           })
@@ -639,13 +639,13 @@ async function processPaymentIntentSucceeded(
       integrationId,
       metricType: 'revenue',
       value: amount,
-      metadata: {
+      metadata: JSON.stringify({
         paymentIntentId: paymentIntent.id,
         currency: paymentIntent.currency,
         customerId: paymentIntent.customer,
         paymentMethod: paymentIntent.payment_method_types?.join(','),
         source: 'stripe_webhook'
-      },
+      }),
       dateRecorded: new Date(event.created * 1000)
     }
   })
@@ -664,14 +664,14 @@ async function processPaymentIntentFailed(
       integrationId,
       metricType: 'payment_failed',
       value: paymentIntent.amount / 100,
-      metadata: {
+      metadata: JSON.stringify({
         paymentIntentId: paymentIntent.id,
         currency: paymentIntent.currency,
         customerId: paymentIntent.customer,
         failureCode: paymentIntent.last_payment_error?.code,
         failureMessage: paymentIntent.last_payment_error?.message,
         source: 'stripe_webhook'
-      },
+      }),
       dateRecorded: new Date(event.created * 1000)
     }
   })
@@ -690,14 +690,14 @@ async function processChargeSucceeded(
       integrationId,
       metricType: 'revenue',
       value: charge.amount / 100,
-      metadata: {
+      metadata: JSON.stringify({
         chargeId: charge.id,
         currency: charge.currency,
         customerId: charge.customer,
         paymentMethod: charge.payment_method_details?.type,
         description: charge.description,
         source: 'stripe_webhook'
-      },
+      }),
       dateRecorded: new Date(event.created * 1000)
     }
   })
@@ -716,14 +716,14 @@ async function processChargeFailed(
       integrationId,
       metricType: 'charge_failed',
       value: charge.amount / 100,
-      metadata: {
+      metadata: JSON.stringify({
         chargeId: charge.id,
         currency: charge.currency,
         customerId: charge.customer,
         failureCode: charge.failure_code,
         failureMessage: charge.failure_message,
         source: 'stripe_webhook'
-      },
+      }),
       dateRecorded: new Date(event.created * 1000)
     }
   })
@@ -742,14 +742,14 @@ async function processChargeDispute(
       integrationId,
       metricType: 'chargeback',
       value: dispute.amount / 100,
-      metadata: {
+      metadata: JSON.stringify({
         disputeId: dispute.id,
         chargeId: dispute.charge,
         currency: dispute.currency,
         reason: dispute.reason,
         status: dispute.status,
         source: 'stripe_webhook'
-      },
+      }),
       dateRecorded: new Date(event.created * 1000)
     }
   })
@@ -768,12 +768,12 @@ async function processCustomerCreated(
       integrationId,
       metricType: 'customer_created',
       value: 1,
-      metadata: {
+      metadata: JSON.stringify({
         customerId: customer.id,
         email: customer.email,
         name: customer.name,
         source: 'stripe_webhook'
-      },
+      }),
       dateRecorded: new Date(event.created * 1000)
     }
   })
@@ -792,13 +792,13 @@ async function processCustomerUpdated(
       integrationId,
       metricType: 'customer_updated',
       value: 1,
-      metadata: {
+      metadata: JSON.stringify({
         customerId: customer.id,
         email: customer.email,
         name: customer.name,
         previousAttributes: event.data.previous_attributes,
         source: 'stripe_webhook'
-      },
+      }),
       dateRecorded: new Date(event.created * 1000)
     }
   })
@@ -818,14 +818,14 @@ async function processSubscriptionCreated(
       integrationId,
       metricType: 'subscription_created',
       value: amount,
-      metadata: {
+      metadata: JSON.stringify({
         subscriptionId: subscription.id,
         customerId: subscription.customer,
         status: subscription.status,
         priceId: subscription.items.data[0]?.price?.id,
         interval: subscription.items.data[0]?.price?.recurring?.interval,
         source: 'stripe_webhook'
-      },
+      }),
       dateRecorded: new Date(event.created * 1000)
     }
   })
@@ -845,14 +845,14 @@ async function processSubscriptionUpdated(
       integrationId,
       metricType: 'subscription_updated',
       value: amount,
-      metadata: {
+      metadata: JSON.stringify({
         subscriptionId: subscription.id,
         customerId: subscription.customer,
         status: subscription.status,
         priceId: subscription.items.data[0]?.price?.id,
         previousAttributes: event.data.previous_attributes,
         source: 'stripe_webhook'
-      },
+      }),
       dateRecorded: new Date(event.created * 1000)
     }
   })
@@ -871,13 +871,13 @@ async function processSubscriptionDeleted(
       integrationId,
       metricType: 'subscription_cancelled',
       value: 1,
-      metadata: {
+      metadata: JSON.stringify({
         subscriptionId: subscription.id,
         customerId: subscription.customer,
         canceledAt: subscription.canceled_at,
         cancelAtPeriodEnd: subscription.cancel_at_period_end,
         source: 'stripe_webhook'
-      },
+      }),
       dateRecorded: new Date(event.created * 1000)
     }
   })
@@ -896,14 +896,14 @@ async function processInvoicePaid(
       integrationId,
       metricType: 'invoice_paid',
       value: invoice.amount_paid / 100,
-      metadata: {
+      metadata: JSON.stringify({
         invoiceId: invoice.id,
         customerId: invoice.customer,
         subscriptionId: invoice.subscription,
         currency: invoice.currency,
         paidAt: invoice.status_transitions?.paid_at,
         source: 'stripe_webhook'
-      },
+      }),
       dateRecorded: new Date(event.created * 1000)
     }
   })
@@ -922,14 +922,14 @@ async function processInvoicePaymentFailed(
       integrationId,
       metricType: 'invoice_payment_failed',
       value: invoice.amount_due / 100,
-      metadata: {
+      metadata: JSON.stringify({
         invoiceId: invoice.id,
         customerId: invoice.customer,
         subscriptionId: invoice.subscription,
         currency: invoice.currency,
         attemptCount: invoice.attempt_count,
         source: 'stripe_webhook'
-      },
+      }),
       dateRecorded: new Date(event.created * 1000)
     }
   })
@@ -948,14 +948,14 @@ async function processCheckoutCompleted(
       integrationId,
       metricType: 'checkout_completed',
       value: session.amount_total / 100,
-      metadata: {
+      metadata: JSON.stringify({
         sessionId: session.id,
         customerId: session.customer,
         currency: session.currency,
         mode: session.mode,
         paymentStatus: session.payment_status,
         source: 'stripe_webhook'
-      },
+      }),
       dateRecorded: new Date(event.created * 1000)
     }
   })

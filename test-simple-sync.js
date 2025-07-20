@@ -50,7 +50,7 @@ async function simpleSync() {
             integrationId: integration.id,
             metricType: 'orders',
             value: 1,
-            metadata: {
+            metadata: JSON.stringify({
               orderId: order.id,
               orderNumber: order.number,
               customerId: order.customer?.id,
@@ -58,7 +58,7 @@ async function simpleSync() {
               currency: order.currency,
               financialStatus: order.financial_status,
               source: 'manual_sync'
-            },
+            }),
             dateRecorded: new Date(order.created_at)
           }
         })
@@ -71,14 +71,14 @@ async function simpleSync() {
               integrationId: integration.id,
               metricType: 'revenue',
               value: parseFloat(order.total_price || '0'),
-              metadata: {
+              metadata: JSON.stringify({
                 orderId: order.id,
                 orderNumber: order.number,
                 customerId: order.customer?.id,
                 currency: order.currency,
                 financialStatus: order.financial_status,
                 source: 'manual_sync'
-              },
+              }),
               dateRecorded: new Date(order.created_at)
             }
           })
@@ -114,7 +114,7 @@ async function simpleSync() {
               integrationId: integration.id,
               metricType: 'customer_created',
               value: 1,
-              metadata: {
+              metadata: JSON.stringify({
                 customerId: customer.id,
                 email: customer.email,
                 firstName: customer.first_name,
@@ -122,7 +122,7 @@ async function simpleSync() {
                 ordersCount: customer.orders_count,
                 totalSpent: customer.total_spent,
                 source: 'manual_sync'
-              },
+              }),
               dateRecorded: new Date(customer.created_at)
             }
           })
@@ -139,11 +139,11 @@ async function simpleSync() {
       where: { id: integration.id },
       data: { 
         lastSyncAt: new Date(),
-        metadata: {
-          ...integration.metadata,
+        metadata: JSON.stringify({
+          ...(typeof integration.metadata === 'string' ? JSON.parse(integration.metadata) : integration.metadata),
           lastManualSync: new Date().toISOString(),
           lastSyncRecords: dataPointsCreated
-        }
+        })
       }
     })
 

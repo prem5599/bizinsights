@@ -232,23 +232,23 @@ export function extractMetricFromWebhook(
           metrics.push({
             metricType: 'revenue',
             value: parseFloat(payload.total_price || '0'),
-            metadata: {
+            metadata: JSON.stringify({
               orderId: payload.id,
               currency: payload.currency,
               orderNumber: payload.order_number,
               customerEmail: payload.email
-            },
+            }),
             dateRecorded: new Date(payload.created_at || Date.now())
           })
 
           metrics.push({
             metricType: 'orders',
             value: 1,
-            metadata: {
+            metadata: JSON.stringify({
               orderId: payload.id,
               orderNumber: payload.order_number,
               status: payload.financial_status
-            },
+            }),
             dateRecorded: new Date(payload.created_at || Date.now())
           })
         }
@@ -260,11 +260,11 @@ export function extractMetricFromWebhook(
           metrics.push({
             metricType: 'revenue',
             value: amount / 100, // Convert cents to dollars
-            metadata: {
+            metadata: JSON.stringify({
               paymentIntentId: payload.data.object.id,
               currency: payload.data.object.currency,
               customerId: payload.data.object.customer
-            },
+            }),
             dateRecorded: new Date()
           })
         }
