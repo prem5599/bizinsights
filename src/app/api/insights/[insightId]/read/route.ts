@@ -5,9 +5,9 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
 interface RouteParams {
-  params: {
+  params: Promise<{
     insightId: string
-  }
+  }>
 }
 
 export async function POST(req: NextRequest, { params }: RouteParams) {
@@ -18,7 +18,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { insightId } = params
+    const { insightId } = await params
 
     // First, find the insight and verify user has access
     const insight = await prisma.insight.findUnique({
@@ -86,7 +86,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { insightId } = params
+    const { insightId } = await params
 
     // Find the insight and verify user has access
     const insight = await prisma.insight.findUnique({

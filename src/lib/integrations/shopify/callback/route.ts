@@ -81,7 +81,7 @@ export async function GET(req: NextRequest) {
         }
       },
       update: {
-        accessToken,
+        accessToken: accessToken as any,
         platformAccountId: shopDomain,
         status: 'active',
         tokenExpiresAt: null // Shopify tokens don't expire
@@ -90,7 +90,7 @@ export async function GET(req: NextRequest) {
         organizationId,
         platform: 'shopify',
         platformAccountId: shopDomain,
-        accessToken,
+        accessToken: accessToken as any,
         status: 'active',
         tokenExpiresAt: null
       }

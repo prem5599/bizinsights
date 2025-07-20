@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { AIInsightsEngine, generateInsightsForAllOrganizations } from '@/lib/insights/engine'
+import { InsightsEngine, generateInsightsForAllOrganizations } from '@/lib/insights/engine'
 
 export async function POST(req: NextRequest) {
   try {
@@ -15,17 +15,29 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { organizationId, timeframe } = body
 
-    if (!organizationId) {
-      return NextResponse.json(
-        { error: 'Organization ID is required' },
-        { status: 400 }
-      )
+    let targetOrganizationId = organizationId
+
+    // If no organizationId provided, get the user's first organization
+    if (!targetOrganizationId) {
+      const userMembership = await prisma.organizationMember.findFirst({
+        where: { userId: session.user.id },
+        include: { organization: true }
+      })
+
+      if (!userMembership) {
+        return NextResponse.json(
+          { error: 'No organization found. Please create an organization first.' },
+          { status: 400 }
+        )
+      }
+
+      targetOrganizationId = userMembership.organizationId
     }
 
     // Verify user has access to organization
     const member = await prisma.organizationMember.findFirst({
       where: {
-        organizationId,
+        organizationId: targetOrganizationId,
         userId: session.user.id
       }
     })
@@ -40,7 +52,7 @@ export async function POST(req: NextRequest) {
     // Check if organization has active integrations
     const activeIntegrations = await prisma.integration.count({
       where: {
-        organizationId,
+        organizationId: targetOrganizationId,
         status: 'active'
       }
     })
@@ -64,12 +76,12 @@ export async function POST(req: NextRequest) {
     } : defaultTimeframe
 
     // Generate insights
-    const engine = new AIInsightsEngine(organizationId)
+    const engine = new InsightsEngine(targetOrganizationId)
     const insights = await engine.generateInsights(analysisTimeframe)
 
     // Get organization info for response
     const organization = await prisma.organization.findUnique({
-      where: { id: organizationId },
+      where: { id: targetOrganizationId },
       select: { name: true }
     })
 

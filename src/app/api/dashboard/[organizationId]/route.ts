@@ -38,12 +38,12 @@ interface DashboardInsight {
   impactScore: number
   isRead: boolean
   createdAt: string
-  metadata: Record<string, any>
+  metadata: Record<string, unknown>
 }
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { organizationId: string } }
+  { params }: { params: Promise<{ organizationId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -51,7 +51,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { organizationId } = params
+    const { organizationId } = await params
     const { searchParams } = new URL(request.url)
     const days = parseInt(searchParams.get('days') || '30')
 
@@ -101,7 +101,7 @@ export async function GET(
 
     let metrics: DashboardMetrics
     let insights: DashboardInsight[]
-    let chartData: any
+    let chartData: Array<{ date: string; revenue: number; orders: number; sessions: number }>
 
     if (hasRealData) {
       // Calculate real metrics from data points
@@ -287,7 +287,7 @@ async function fetchInsights(organizationId: string): Promise<DashboardInsight[]
     impactScore: insight.impactScore,
     isRead: insight.isRead,
     createdAt: insight.createdAt.toISOString(),
-    metadata: insight.metadata as Record<string, any>
+    metadata: insight.metadata as Record<string, unknown>
   }))
 }
 
@@ -353,7 +353,7 @@ async function fetchChartData(organizationId: string, days: number) {
   const trafficBySource = new Map()
   let totalTraffic = 0
   trafficData.forEach(point => {
-    const source = (point.metadata as any)?.source || 'Direct'
+    const source = (point.metadata as { source?: string; [key: string]: unknown })?.source || 'Direct'
     const sessions = Number(point.value)
     totalTraffic += sessions
     

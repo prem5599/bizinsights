@@ -43,7 +43,7 @@ export class TeamManager {
    * Get all team members for an organization
    */
   static async getTeamMembers(organizationId: string): Promise<TeamMember[]> {
-    return prisma.organizationMember.findMany({
+    const members = await prisma.organizationMember.findMany({
       where: { organizationId },
       include: {
         user: {
@@ -60,6 +60,11 @@ export class TeamManager {
         { createdAt: 'asc' }
       ]
     })
+    
+    return members.map(member => ({
+      ...member,
+      role: member.role as 'owner' | 'admin' | 'member' | 'viewer'
+    }))
   }
 
   /**
@@ -406,7 +411,7 @@ export class TeamManager {
 
       if (!member) return false
 
-      const permissions = this.getPermissions(member.role)
+      const permissions = this.getPermissions(member.role as 'owner' | 'admin' | 'member' | 'viewer')
       return permissions[permission]
     } catch (error) {
       console.error('Permission check failed:', error)

@@ -7,7 +7,7 @@ import { TeamManager } from '@/lib/team/manager'
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { orgId: string } }
+  { params }: { params: Promise<{ orgId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -15,9 +15,11 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const { orgId } = await params
+
     // Check if user has access to organization
     const hasPermission = await TeamManager.hasPermission(
-      params.orgId,
+      orgId,
       session.user.id,
       'canRead'
     )
@@ -32,14 +34,14 @@ export async function GET(
     switch (action) {
       case 'layout':
         const layout = await DashboardSettings.getUserDashboard(
-          params.orgId,
+          orgId,
           session.user.id
         )
         return NextResponse.json({ layout })
 
       case 'preferences':
         const preferences = await DashboardSettings.getDashboardPreferences(
-          params.orgId,
+          orgId,
           session.user.id
         )
         return NextResponse.json({ preferences })
@@ -51,8 +53,8 @@ export async function GET(
       default:
         // Return both layout and preferences
         const [dashboardLayout, dashboardPreferences] = await Promise.all([
-          DashboardSettings.getUserDashboard(params.orgId, session.user.id),
-          DashboardSettings.getDashboardPreferences(params.orgId, session.user.id)
+          DashboardSettings.getUserDashboard(orgId, session.user.id),
+          DashboardSettings.getDashboardPreferences(orgId, session.user.id)
         ])
 
         return NextResponse.json({
@@ -73,7 +75,7 @@ export async function GET(
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { orgId: string } }
+  { params }: { params: Promise<{ orgId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -81,9 +83,11 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const { orgId } = await params
+
     // Check if user has write permission
     const hasPermission = await TeamManager.hasPermission(
-      params.orgId,
+      orgId,
       session.user.id,
       'canWrite'
     )
@@ -171,7 +175,7 @@ export async function POST(
         }
 
         const preferencesResult = await DashboardSettings.updateDashboardPreferences(
-          params.orgId,
+          orgId,
           session.user.id,
           preferences
         )
@@ -208,7 +212,7 @@ export async function POST(
         }
 
         const importResult = await DashboardSettings.importDashboard(
-          params.orgId,
+          orgId,
           session.user.id,
           configJson
         )
@@ -224,7 +228,7 @@ export async function POST(
 
       case 'reset_to_default':
         const defaultLayout = await DashboardSettings.createDefaultDashboard(
-          params.orgId,
+          orgId,
           session.user.id
         )
 

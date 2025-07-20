@@ -321,10 +321,10 @@ export class ShopifyCurrencyIntegration {
       await prisma.integration.update({
         where: { id: integrationId },
         data: {
-          settings: {
+          metadata: {
             ...settings,
             currencyUpdatedAt: new Date().toISOString()
-          }
+          } as any
         }
       })
     } catch (error) {
@@ -372,7 +372,7 @@ export class ShopifyCurrencyIntegration {
       })
 
       return {
-        totalRevenue: dataPoints.reduce((sum, point) => sum + point.value, 0),
+        totalRevenue: dataPoints.reduce((sum, point) => sum + Number(point.value), 0),
         currencyBreakdown: byCurrency,
         baseCurrency: this.baseCurrency,
         conversionCount: dataPoints.length

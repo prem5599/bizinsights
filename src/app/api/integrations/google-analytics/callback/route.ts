@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     try {
       const stateData = JSON.parse(Buffer.from(state, 'base64').toString())
       organizationId = stateData.organizationId
-    } catch (error) {
+    } catch {
       return NextResponse.redirect(
         `${process.env.NEXTAUTH_URL}/dashboard/integrations?error=invalid_state`
       )

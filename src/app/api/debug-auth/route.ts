@@ -1,5 +1,5 @@
 // src/app/api/debug-auth/route.ts
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
@@ -8,7 +8,7 @@ import bcrypt from 'bcryptjs'
 /**
  * Debug authentication API (moved from /api/auth/debug to avoid NextAuth conflicts)
  */
-export async function GET(req: NextRequest) {
+export async function GET() {
   // Security check - only allow in development
   if (process.env.NODE_ENV !== 'development') {
     return NextResponse.json(
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
   try {
     console.log('🔧 Starting authentication debug check...')
 
-    const debugInfo: any = {
+    const debugInfo: Record<string, unknown> = {
       timestamp: new Date().toISOString(),
       environment: process.env.NODE_ENV,
       checks: {},

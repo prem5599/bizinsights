@@ -1,4 +1,4 @@
-// src/app/dashboard/settings/pageComplete.tsx
+// src/app/dashboard/settings/page.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -20,12 +20,16 @@ import {
   Trash2,
   Eye,
   EyeOff,
-  AlertTriangle
+  AlertTriangle,
+  Loader2,
+  Save,
+  ExternalLink
 } from 'lucide-react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { useCurrencyContext } from '@/contexts/CurrencyContext'
 
 interface OrganizationSettings {
+  id: string
   name: string
   email: string
   website: string
@@ -35,6 +39,63 @@ interface OrganizationSettings {
   logo: string | null
   industry: string
   companySize: string
+  currency: string
+}
+
+interface UserProfile {
+  id: string
+  name: string
+  email: string
+  image: string | null
+  phone: string | null
+  timezone: string | null
+}
+
+interface SecurityInfo {
+  twoFactorEnabled: boolean
+  passwordLastChanged: string
+  activeSessions: number
+  sessions: Array<{
+    id: string
+    device: string
+    location: string
+    lastActive: string
+    isCurrent: boolean
+  }>
+}
+
+interface BillingInfo {
+  currentPlan: {
+    name: string
+    tier: string
+    price: number
+    features: string[]
+    restrictions: string[]
+  }
+  subscription: {
+    status: string
+    endsAt: string | null
+    trialEndsAt: string | null
+    isTrialActive: boolean
+  }
+  billing: {
+    email: string | null
+    address: string | null
+    paymentMethod: string
+    billingCycle: string
+  }
+  usage: {
+    integrations: { current: number; limit: number; percentage: number }
+    dataPoints: { current: number; limit: number; percentage: number }
+    apiCalls: { current: number; limit: number; percentage: number }
+  }
+  history: Array<{
+    id: string
+    date: string
+    description: string
+    amount: number
+    status: string
+  }>
 }
 
 const SUPPORTED_CURRENCIES = [
@@ -50,25 +111,20 @@ const SUPPORTED_CURRENCIES = [
   { code: 'SGD', name: 'Singapore Dollar', symbol: 'S$', flag: '🇸🇬' }
 ]
 
-export default function CompleteSettingsPage() {
+export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('organization')
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showCurrentPassword, setShowCurrentPassword] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
   const { currency, setCurrency, formatCurrency } = useCurrencyContext()
   
-  const [orgSettings, setOrgSettings] = useState<OrganizationSettings>({
-    name: 'BizInsights India',
-    email: 'admin@bizinsights.in',
-    website: 'https://bizinsights.in',
-    phone: '+91 98765 43210',
-    address: 'Mumbai, Maharashtra, India',
-    timezone: 'Asia/Kolkata',
-    logo: null,
-    industry: 'E-commerce',
-    companySize: '10-50'
-  })
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
+  const [orgSettings, setOrgSettings] = useState<OrganizationSettings | null>(null)
+  const [securityInfo, setSecurityInfo] = useState<SecurityInfo | null>(null)
+  const [billingInfo, setBillingInfo] = useState<BillingInfo | null>(null)
 
   const [notificationSettings, setNotificationSettings] = useState({
     emailNotifications: true,
@@ -82,35 +138,92 @@ export default function CompleteSettingsPage() {
   })
 
   const [securitySettings, setSecuritySettings] = useState({
-    twoFactorEnabled: false,
-    passwordLastChanged: '30 days ago',
-    activeSessions: 3,
     currentPassword: '',
     newPassword: '',
     confirmPassword: ''
   })
 
-  const [billingInfo, setBillingInfo] = useState({
-    currentPlan: 'Free',
-    billingCycle: 'monthly',
-    nextBilling: '2024-02-15',
-    paymentMethod: '**** **** **** 1234',
-    billingAddress: 'Same as organization address'
-  })
-
   useEffect(() => {
-    setTimeout(() => setIsLoading(false), 1000)
+    loadAllSettings()
   }, [])
 
-  const handleSaveOrganization = async () => {
-    setIsSaving(true)
+  const loadAllSettings = async () => {
+    setIsLoading(true)
+    setError(null)
+    
     try {
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      console.log('Organization settings saved:', orgSettings)
-      alert('Organization settings saved successfully!')
+      const [orgResponse, notificationResponse, securityResponse, billingResponse] = await Promise.all([
+        fetch('/api/organizations/settings'),
+        fetch('/api/user/notifications'),
+        fetch('/api/user/security'),
+        fetch('/api/billing')
+      ])
+
+      if (orgResponse.ok) {
+        const orgData = await orgResponse.json()
+        setOrgSettings(orgData.organization)
+      }
+
+      if (notificationResponse.ok) {
+        const notifData = await notificationResponse.json()
+        setNotificationSettings(notifData.notificationSettings)
+      }
+
+      if (securityResponse.ok) {
+        const secData = await securityResponse.json()
+        setSecurityInfo(secData.security)
+      }
+
+      if (billingResponse.ok) {
+        const billData = await billingResponse.json()
+        setBillingInfo(billData.billing)
+      }
+
     } catch (error) {
-      console.error('Failed to save settings')
-      alert('Failed to save settings')
+      console.error('Failed to load settings:', error)
+      setError('Failed to load settings. Please refresh the page.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const showMessage = (message: string, isError = false) => {
+    if (isError) {
+      setError(message)
+      setSuccess(null)
+    } else {
+      setSuccess(message)
+      setError(null)
+    }
+    setTimeout(() => {
+      setError(null)
+      setSuccess(null)
+    }, 5000)
+  }
+
+  const handleSaveOrganization = async () => {
+    if (!orgSettings) return
+    
+    setIsSaving(true)
+    setError(null)
+    
+    try {
+      const response = await fetch('/api/organizations/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(orgSettings)
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        setOrgSettings(data.organization)
+        showMessage('Organization settings saved successfully!')
+      } else {
+        throw new Error(data.error || 'Failed to save settings')
+      }
+    } catch (error: any) {
+      showMessage(error.message || 'Failed to save settings', true)
     } finally {
       setIsSaving(false)
     }
@@ -118,93 +231,223 @@ export default function CompleteSettingsPage() {
 
   const handleSaveNotifications = async () => {
     setIsSaving(true)
+    setError(null)
+    
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      console.log('Notification settings saved:', notificationSettings)
-      alert('Notification preferences saved!')
-    } catch (error) {
-      console.error('Failed to save notifications')
-      alert('Failed to save notification preferences')
+      const response = await fetch('/api/user/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(notificationSettings)
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        showMessage('Notification preferences saved successfully!')
+      } else {
+        throw new Error(data.error || 'Failed to save notifications')
+      }
+    } catch (error: any) {
+      showMessage(error.message || 'Failed to save notification preferences', true)
     } finally {
       setIsSaving(false)
     }
   }
 
   const handleCurrencyChange = async (newCurrency: string) => {
+    if (!orgSettings) return
+    
     try {
+      // Update organization currency
+      const updatedOrg = { ...orgSettings, currency: newCurrency }
+      setOrgSettings(updatedOrg)
+      
+      // Update global currency context
       await setCurrency(newCurrency)
-      alert(`Currency changed to ${newCurrency}. This will reflect across all pages.`)
-    } catch (error) {
-      console.error('Failed to update currency:', error)
-      alert('Failed to update currency')
+      
+      // Save to backend
+      const response = await fetch('/api/organizations/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currency: newCurrency })
+      })
+
+      if (response.ok) {
+        showMessage(`Currency changed to ${newCurrency}. This will reflect across all pages.`)
+      } else {
+        throw new Error('Failed to save currency preference')
+      }
+    } catch (error: any) {
+      showMessage(error.message || 'Failed to update currency', true)
     }
   }
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file) return
+    if (!file || !orgSettings) return
 
     if (file.size > 2 * 1024 * 1024) {
-      alert('File size must be less than 2MB')
-      return
-    }
-
-    try {
-      const formData = new FormData()
-      formData.append('logo', file)
-      
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      
-      setOrgSettings(prev => ({ ...prev, logo: URL.createObjectURL(file) }))
-      alert('Logo uploaded successfully!')
-    } catch (error) {
-      console.error('Failed to upload logo')
-      alert('Failed to upload logo')
-    }
-  }
-
-  const handlePasswordChange = async () => {
-    if (securitySettings.newPassword !== securitySettings.confirmPassword) {
-      alert('New passwords do not match')
-      return
-    }
-
-    if (securitySettings.newPassword.length < 8) {
-      alert('Password must be at least 8 characters long')
+      showMessage('File size must be less than 2MB', true)
       return
     }
 
     setIsSaving(true)
     try {
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      alert('Password changed successfully!')
-      setSecuritySettings(prev => ({
-        ...prev,
-        currentPassword: '',
-        newPassword: '',
-        confirmPassword: '',
-        passwordLastChanged: 'Just now'
-      }))
-    } catch (error) {
-      alert('Failed to change password')
+      const formData = new FormData()
+      formData.append('logo', file)
+      
+      const response = await fetch('/api/upload/logo', {
+        method: 'POST',
+        body: formData
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        setOrgSettings(prev => prev ? { ...prev, logo: data.logoUrl } : null)
+        showMessage('Logo uploaded successfully!')
+      } else {
+        throw new Error(data.error || 'Failed to upload logo')
+      }
+    } catch (error: any) {
+      showMessage(error.message || 'Failed to upload logo', true)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handlePasswordChange = async () => {
+    if (securitySettings.newPassword !== securitySettings.confirmPassword) {
+      showMessage('New passwords do not match', true)
+      return
+    }
+
+    if (securitySettings.newPassword.length < 8) {
+      showMessage('Password must be at least 8 characters long', true)
+      return
+    }
+
+    setIsSaving(true)
+    try {
+      const response = await fetch('/api/user/security', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'change_password',
+          currentPassword: securitySettings.currentPassword,
+          newPassword: securitySettings.newPassword,
+          confirmPassword: securitySettings.confirmPassword
+        })
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        showMessage('Password changed successfully!')
+        setSecuritySettings({
+          currentPassword: '',
+          newPassword: '',
+          confirmPassword: ''
+        })
+        // Reload security info
+        if (securityInfo) {
+          setSecurityInfo({
+            ...securityInfo,
+            passwordLastChanged: 'Just now'
+          })
+        }
+      } else {
+        throw new Error(data.error || 'Failed to change password')
+      }
+    } catch (error: any) {
+      showMessage(error.message || 'Failed to change password', true)
     } finally {
       setIsSaving(false)
     }
   }
 
   const toggle2FA = async () => {
+    if (!securityInfo) return
+    
     setIsSaving(true)
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      setSecuritySettings(prev => ({
-        ...prev,
-        twoFactorEnabled: !prev.twoFactorEnabled
-      }))
-      alert(`Two-factor authentication ${!securitySettings.twoFactorEnabled ? 'enabled' : 'disabled'}`)
-    } catch (error) {
-      alert('Failed to update two-factor authentication')
+      const response = await fetch('/api/user/security', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'toggle_2fa' })
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        setSecurityInfo({
+          ...securityInfo,
+          twoFactorEnabled: data.twoFactorEnabled
+        })
+        showMessage(data.message)
+      } else {
+        throw new Error(data.error || 'Failed to update two-factor authentication')
+      }
+    } catch (error: any) {
+      showMessage(error.message || 'Failed to update two-factor authentication', true)
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const handleDataExport = async (exportType: string) => {
+    try {
+      const response = await fetch('/api/user/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ exportType, format: 'json' })
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        // Create download link
+        const element = document.createElement('a')
+        element.href = data.downloadUrl
+        element.download = data.filename
+        document.body.appendChild(element)
+        element.click()
+        document.body.removeChild(element)
+        
+        showMessage(`${exportType} data exported successfully!`)
+      } else {
+        throw new Error(data.error || 'Failed to export data')
+      }
+    } catch (error: any) {
+      showMessage(error.message || 'Failed to export data', true)
+    }
+  }
+
+  const handleRevokeSession = async (sessionId: string) => {
+    try {
+      const response = await fetch('/api/user/security', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'revoke_session', sessionId })
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        // Remove session from list
+        if (securityInfo) {
+          setSecurityInfo({
+            ...securityInfo,
+            sessions: securityInfo.sessions.filter(s => s.id !== sessionId),
+            activeSessions: securityInfo.activeSessions - 1
+          })
+        }
+        showMessage('Session revoked successfully')
+      } else {
+        throw new Error(data.error || 'Failed to revoke session')
+      }
+    } catch (error: any) {
+      showMessage(error.message || 'Failed to revoke session', true)
     }
   }
 
@@ -225,6 +468,27 @@ export default function CompleteSettingsPage() {
     )
   }
 
+  if (error) {
+    return (
+      <DashboardLayout>
+        <div className="max-w-md mx-auto mt-8">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+            <AlertTriangle className="h-12 w-12 text-red-600 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-red-900 mb-2">Error Loading Settings</h3>
+            <p className="text-red-700 mb-4">{error}</p>
+            <button
+              onClick={loadAllSettings}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
+            >
+              <Loader2 className="h-4 w-4 mr-2" />
+              Retry
+            </button>
+          </div>
+        </div>
+      </DashboardLayout>
+    )
+  }
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -234,6 +498,25 @@ export default function CompleteSettingsPage() {
           <p className="text-gray-600 mt-1">
             Manage your organization preferences and configurations
           </p>
+          
+          {/* Success/Error Messages */}
+          {success && (
+            <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-4">
+              <div className="flex items-center">
+                <Check className="h-5 w-5 text-green-600 mr-2" />
+                <p className="text-green-800">{success}</p>
+              </div>
+            </div>
+          )}
+          
+          {error && (
+            <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="flex items-center">
+                <AlertTriangle className="h-5 w-5 text-red-600 mr-2" />
+                <p className="text-red-800">{error}</p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Tabs */}
@@ -243,7 +526,8 @@ export default function CompleteSettingsPage() {
               { id: 'organization', icon: <Building2 className="h-4 w-4 mr-2" />, label: 'Organization' },
               { id: 'notifications', icon: <Bell className="h-4 w-4 mr-2" />, label: 'Notifications' },
               { id: 'security', icon: <Shield className="h-4 w-4 mr-2" />, label: 'Security' },
-              { id: 'billing', icon: <CreditCard className="h-4 w-4 mr-2" />, label: 'Billing' }
+              { id: 'billing', icon: <CreditCard className="h-4 w-4 mr-2" />, label: 'Billing' },
+              { id: 'privacy', icon: <Download className="h-4 w-4 mr-2" />, label: 'Privacy & Data' }
             ].map(tab => (
               <button
                 key={tab.id}
@@ -262,7 +546,7 @@ export default function CompleteSettingsPage() {
         </div>
 
         {/* Organization Tab */}
-        {activeTab === 'organization' && (
+        {activeTab === 'organization' && orgSettings && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
               {/* Basic Information */}
@@ -274,7 +558,7 @@ export default function CompleteSettingsPage() {
                     <input
                       type="text"
                       value={orgSettings.name}
-                      onChange={(e) => setOrgSettings(prev => ({ ...prev, name: e.target.value }))}
+                      onChange={(e) => setOrgSettings(prev => prev ? { ...prev, name: e.target.value } : null)}
                       className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                     />
                   </div>
@@ -283,8 +567,8 @@ export default function CompleteSettingsPage() {
                     <label className="block text-sm font-medium text-gray-700">Email</label>
                     <input
                       type="email"
-                      value={orgSettings.email}
-                      onChange={(e) => setOrgSettings(prev => ({ ...prev, email: e.target.value }))}
+                      value={orgSettings.email || ''}
+                      onChange={(e) => setOrgSettings(prev => prev ? { ...prev, email: e.target.value } : null)}
                       className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                     />
                   </div>
@@ -293,8 +577,8 @@ export default function CompleteSettingsPage() {
                     <label className="block text-sm font-medium text-gray-700">Website</label>
                     <input
                       type="url"
-                      value={orgSettings.website}
-                      onChange={(e) => setOrgSettings(prev => ({ ...prev, website: e.target.value }))}
+                      value={orgSettings.website || ''}
+                      onChange={(e) => setOrgSettings(prev => prev ? { ...prev, website: e.target.value } : null)}
                       className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                     />
                   </div>
@@ -303,8 +587,8 @@ export default function CompleteSettingsPage() {
                     <label className="block text-sm font-medium text-gray-700">Phone</label>
                     <input
                       type="tel"
-                      value={orgSettings.phone}
-                      onChange={(e) => setOrgSettings(prev => ({ ...prev, phone: e.target.value }))}
+                      value={orgSettings.phone || ''}
+                      onChange={(e) => setOrgSettings(prev => prev ? { ...prev, phone: e.target.value } : null)}
                       className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                     />
                   </div>
@@ -313,8 +597,8 @@ export default function CompleteSettingsPage() {
                 <div className="mt-6">
                   <label className="block text-sm font-medium text-gray-700">Address</label>
                   <textarea
-                    value={orgSettings.address}
-                    onChange={(e) => setOrgSettings(prev => ({ ...prev, address: e.target.value }))}
+                    value={orgSettings.address || ''}
+                    onChange={(e) => setOrgSettings(prev => prev ? { ...prev, address: e.target.value } : null)}
                     rows={3}
                     className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                   />
@@ -561,13 +845,24 @@ export default function CompleteSettingsPage() {
         {/* Security Tab */}
         {activeTab === 'security' && (
           <div className="space-y-6">
+            {!securityInfo && (
+              <div className="bg-white shadow rounded-lg p-6">
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+                  <span className="ml-3 text-gray-600">Loading security information...</span>
+                </div>
+              </div>
+            )}
+            
+            {securityInfo && (
+              <>
             {/* Two-Factor Authentication */}
             <div className="bg-white shadow rounded-lg p-6">
               <h3 className="text-lg font-medium mb-4">Two-Factor Authentication</h3>
               <div className="flex items-center justify-between">
                 <div>
                   <h4 className="text-sm font-medium text-gray-900">
-                    2FA Status: {securitySettings.twoFactorEnabled ? 'Enabled' : 'Disabled'}
+                    2FA Status: {securityInfo?.twoFactorEnabled ? 'Enabled' : 'Disabled'}
                   </h4>
                   <p className="text-sm text-gray-600">
                     Add an extra layer of security to your account with two-factor authentication
@@ -577,12 +872,12 @@ export default function CompleteSettingsPage() {
                   onClick={toggle2FA}
                   disabled={isSaving}
                   className={`px-4 py-2 rounded-md text-sm font-medium ${
-                    securitySettings.twoFactorEnabled
+                    securityInfo?.twoFactorEnabled
                       ? 'bg-red-600 text-white hover:bg-red-700'
                       : 'bg-green-600 text-white hover:bg-green-700'
                   } disabled:opacity-50`}
                 >
-                  {isSaving ? 'Processing...' : securitySettings.twoFactorEnabled ? 'Disable 2FA' : 'Enable 2FA'}
+                  {isSaving ? 'Processing...' : securityInfo?.twoFactorEnabled ? 'Disable 2FA' : 'Enable 2FA'}
                 </button>
               </div>
             </div>
@@ -591,7 +886,7 @@ export default function CompleteSettingsPage() {
             <div className="bg-white shadow rounded-lg p-6">
               <h3 className="text-lg font-medium mb-4">Change Password</h3>
               <p className="text-sm text-gray-600 mb-4">
-                Last changed: {securitySettings.passwordLastChanged}
+                Last changed: {securityInfo?.passwordLastChanged || 'Unknown'}
               </p>
               
               <div className="space-y-4">
@@ -665,39 +960,58 @@ export default function CompleteSettingsPage() {
             <div className="bg-white shadow rounded-lg p-6">
               <h3 className="text-lg font-medium mb-4">Active Sessions</h3>
               <p className="text-sm text-gray-600 mb-4">
-                You have {securitySettings.activeSessions} active sessions across different devices
+                You have {securityInfo?.activeSessions || 0} active sessions across different devices
               </p>
               <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
-                  <div>
-                    <div className="text-sm font-medium">Current Session</div>
-                    <div className="text-xs text-gray-500">Chrome on Windows • India</div>
+                {securityInfo?.sessions?.map(session => (
+                  <div key={session.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                    <div>
+                      <div className="text-sm font-medium">{session.device}</div>
+                      <div className="text-xs text-gray-500">{session.location} • {new Date(session.lastActive).toLocaleDateString()}</div>
+                    </div>
+                    {session.isCurrent ? (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        Current
+                      </span>
+                    ) : (
+                      <button 
+                        onClick={() => handleRevokeSession(session.id)}
+                        className="text-red-600 hover:text-red-800 text-sm font-medium"
+                      >
+                        Revoke
+                      </button>
+                    )}
                   </div>
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                    Current
-                  </span>
-                </div>
-                <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
-                  <div>
-                    <div className="text-sm font-medium">Mobile Session</div>
-                    <div className="text-xs text-gray-500">Safari on iPhone • 2 hours ago</div>
+                )) || []}
+                {(!securityInfo?.sessions || securityInfo.sessions.length === 0) && (
+                  <div className="text-center py-8 text-gray-500">
+                    <p className="text-sm">No active sessions found</p>
                   </div>
-                  <button className="text-red-600 hover:text-red-800 text-sm font-medium">
-                    Revoke
-                  </button>
-                </div>
-                <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
-                  <div>
-                    <div className="text-sm font-medium">Tablet Session</div>
-                    <div className="text-xs text-gray-500">Chrome on iPad • 1 day ago</div>
-                  </div>
-                  <button className="text-red-600 hover:text-red-800 text-sm font-medium">
-                    Revoke
-                  </button>
-                </div>
+                )}
               </div>
               <div className="mt-4">
-                <button className="text-red-600 hover:text-red-800 text-sm font-medium">
+                <button 
+                  onClick={() => {
+                    // Handle revoke all sessions
+                    fetch('/api/user/security', {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ action: 'revoke_all_sessions' })
+                    }).then(() => {
+                      if (securityInfo) {
+                        setSecurityInfo({
+                          ...securityInfo,
+                          sessions: securityInfo.sessions?.filter(s => s.isCurrent) || [],
+                          activeSessions: 1
+                        })
+                      }
+                      showMessage('All other sessions revoked successfully')
+                    }).catch(() => {
+                      showMessage('Failed to revoke sessions', true)
+                    })
+                  }}
+                  className="text-red-600 hover:text-red-800 text-sm font-medium"
+                >
                   Revoke All Other Sessions
                 </button>
               </div>
@@ -736,21 +1050,34 @@ export default function CompleteSettingsPage() {
                 </div>
               </div>
             </div>
+              </>
+            )}
           </div>
         )}
 
         {/* Billing Tab */}
         {activeTab === 'billing' && (
           <div className="space-y-6">
+            {!billingInfo && (
+              <div className="bg-white shadow rounded-lg p-6">
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+                  <span className="ml-3 text-gray-600">Loading billing information...</span>
+                </div>
+              </div>
+            )}
+            
+            {billingInfo && (
+              <>
             {/* Current Plan */}
             <div className="bg-white shadow rounded-lg p-6">
               <h3 className="text-lg font-medium mb-4">Current Plan</h3>
               <div className="flex items-center justify-between">
                 <div>
-                  <h4 className="text-xl font-bold text-gray-900">{billingInfo.currentPlan} Plan</h4>
+                  <h4 className="text-xl font-bold text-gray-900">{billingInfo.currentPlan.name} Plan</h4>
                   <p className="text-gray-600">Perfect for getting started</p>
                   <div className="mt-2">
-                    <span className="text-2xl font-bold text-green-600">{formatCurrency(0)}</span>
+                    <span className="text-2xl font-bold text-green-600">{formatCurrency(billingInfo.currentPlan.price)}</span>
                     <span className="text-gray-500 ml-1">/ month</span>
                   </div>
                 </div>
@@ -762,26 +1089,18 @@ export default function CompleteSettingsPage() {
               <div className="mt-6 pt-6 border-t border-gray-200">
                 <h5 className="font-medium text-gray-900 mb-3">Plan Features</h5>
                 <ul className="space-y-2">
-                  <li className="flex items-center text-sm text-gray-600">
-                    <Check className="h-4 w-4 text-green-500 mr-2" />
-                    Up to 2 integrations
-                  </li>
-                  <li className="flex items-center text-sm text-gray-600">
-                    <Check className="h-4 w-4 text-green-500 mr-2" />
-                    Basic analytics
-                  </li>
-                  <li className="flex items-center text-sm text-gray-600">
-                    <Check className="h-4 w-4 text-green-500 mr-2" />
-                    Email support
-                  </li>
-                  <li className="flex items-center text-sm text-gray-500">
-                    <AlertTriangle className="h-4 w-4 text-gray-400 mr-2" />
-                    Advanced AI insights (Pro feature)
-                  </li>
-                  <li className="flex items-center text-sm text-gray-500">
-                    <AlertTriangle className="h-4 w-4 text-gray-400 mr-2" />
-                    Custom reports (Pro feature)
-                  </li>
+                  {billingInfo.currentPlan.features.map((feature, index) => (
+                    <li key={index} className="flex items-center text-sm text-gray-600">
+                      <Check className="h-4 w-4 text-green-500 mr-2" />
+                      {feature}
+                    </li>
+                  ))}
+                  {billingInfo.currentPlan.restrictions.map((restriction, index) => (
+                    <li key={index} className="flex items-center text-sm text-gray-500">
+                      <AlertTriangle className="h-4 w-4 text-gray-400 mr-2" />
+                      {restriction} (Higher tier feature)
+                    </li>
+                  ))}
                 </ul>
               </div>
             </div>
@@ -794,7 +1113,7 @@ export default function CompleteSettingsPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Payment Method</label>
                   <div className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg">
                     <CardIcon className="h-5 w-5 text-gray-400" />
-                    <span className="text-sm">{billingInfo.paymentMethod}</span>
+                    <span className="text-sm">{billingInfo.billing.paymentMethod}</span>
                     <button className="text-blue-600 hover:text-blue-800 text-sm font-medium ml-auto">
                       Update
                     </button>
@@ -804,8 +1123,11 @@ export default function CompleteSettingsPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Billing Cycle</label>
                   <select 
-                    value={billingInfo.billingCycle}
-                    onChange={(e) => setBillingInfo(prev => ({ ...prev, billingCycle: e.target.value }))}
+                    value={billingInfo.billing.billingCycle}
+                    onChange={(e) => {
+                      // Handle billing cycle change
+                      console.log('Billing cycle changed to:', e.target.value)
+                    }}
                     className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                   >
                     <option value="monthly">Monthly</option>
@@ -816,7 +1138,7 @@ export default function CompleteSettingsPage() {
 
               <div className="mt-6">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Billing Address</label>
-                <p className="text-sm text-gray-600">{billingInfo.billingAddress}</p>
+                <p className="text-sm text-gray-600">{billingInfo.billing.address || 'No billing address set'}</p>
                 <button className="text-blue-600 hover:text-blue-800 text-sm font-medium mt-1">
                   Update Address
                 </button>
@@ -827,23 +1149,31 @@ export default function CompleteSettingsPage() {
             <div className="bg-white shadow rounded-lg p-6">
               <h3 className="text-lg font-medium mb-4">Billing History</h3>
               <div className="space-y-3">
-                <div className="flex items-center justify-between py-3 border-b border-gray-200">
-                  <div>
-                    <div className="text-sm font-medium">Free Plan</div>
-                    <div className="text-xs text-gray-500">Jan 15, 2024 - Current</div>
+                {billingInfo.history.map((item) => (
+                  <div key={item.id} className="flex items-center justify-between py-3 border-b border-gray-200">
+                    <div>
+                      <div className="text-sm font-medium">{item.description}</div>
+                      <div className="text-xs text-gray-500">{item.date}</div>
+                    </div>
+                    <div className="flex items-center space-x-3">
+                      <span className={`text-sm font-medium ${
+                        item.status === 'paid' ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {formatCurrency(item.amount)}
+                      </span>
+                      <button className="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                        <Download className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-3">
-                    <span className="text-sm font-medium text-green-600">{formatCurrency(0)}</span>
-                    <button className="text-blue-600 hover:text-blue-800 text-sm font-medium">
-                      <Download className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
+                ))}
                 
-                <div className="text-center py-8 text-gray-500">
-                  <p className="text-sm">No billing history available</p>
-                  <p className="text-xs">Upgrade to a paid plan to see billing history</p>
-                </div>
+                {billingInfo.history.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    <p className="text-sm">No billing history available</p>
+                    <p className="text-xs">Upgrade to a paid plan to see billing history</p>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -854,30 +1184,45 @@ export default function CompleteSettingsPage() {
                 <div>
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-sm font-medium">Integrations</span>
-                    <span className="text-sm text-gray-600">1 / 2</span>
+                    <span className="text-sm text-gray-600">
+                      {billingInfo.usage.integrations.current} / {billingInfo.usage.integrations.limit === -1 ? '∞' : billingInfo.usage.integrations.limit}
+                    </span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div className="bg-blue-600 h-2 rounded-full" style={{ width: '50%' }}></div>
+                    <div 
+                      className="bg-blue-600 h-2 rounded-full" 
+                      style={{ width: `${Math.min(billingInfo.usage.integrations.percentage, 100)}%` }}
+                    ></div>
                   </div>
                 </div>
                 
                 <div>
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-sm font-medium">Data Points (This Month)</span>
-                    <span className="text-sm text-gray-600">1,250 / 10,000</span>
+                    <span className="text-sm text-gray-600">
+                      {billingInfo.usage.dataPoints.current.toLocaleString()} / {billingInfo.usage.dataPoints.limit === -1 ? '∞' : billingInfo.usage.dataPoints.limit.toLocaleString()}
+                    </span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div className="bg-green-600 h-2 rounded-full" style={{ width: '12.5%' }}></div>
+                    <div 
+                      className="bg-green-600 h-2 rounded-full" 
+                      style={{ width: `${Math.min(billingInfo.usage.dataPoints.percentage, 100)}%` }}
+                    ></div>
                   </div>
                 </div>
                 
                 <div>
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-sm font-medium">API Calls (This Month)</span>
-                    <span className="text-sm text-gray-600">3,420 / 50,000</span>
+                    <span className="text-sm text-gray-600">
+                      {billingInfo.usage.apiCalls.current.toLocaleString()} / {billingInfo.usage.apiCalls.limit === -1 ? '∞' : billingInfo.usage.apiCalls.limit.toLocaleString()}
+                    </span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div className="bg-yellow-600 h-2 rounded-full" style={{ width: '6.84%' }}></div>
+                    <div 
+                      className="bg-yellow-600 h-2 rounded-full" 
+                      style={{ width: `${Math.min(billingInfo.usage.apiCalls.percentage, 100)}%` }}
+                    ></div>
                   </div>
                 </div>
               </div>
@@ -906,6 +1251,172 @@ export default function CompleteSettingsPage() {
                     Delete Account
                   </button>
                 </div>
+              </div>
+            </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Privacy & Data Tab */}
+        {activeTab === 'privacy' && (
+          <div className="space-y-6">
+            {/* Data Export */}
+            <div className="bg-white shadow rounded-lg p-6">
+              <h3 className="text-lg font-medium mb-4 flex items-center">
+                <Download className="h-5 w-5 mr-2" />
+                Data Export
+              </h3>
+              <p className="text-gray-600 mb-6">
+                Export your data in various formats. This includes your profile, organization settings, and business data.
+              </p>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <button
+                  onClick={() => handleDataExport('profile')}
+                  className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Export Profile Data
+                </button>
+                
+                <button
+                  onClick={() => handleDataExport('settings')}
+                  className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Export Organization Settings
+                </button>
+                
+                <button
+                  onClick={() => handleDataExport('data')}
+                  className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Export Business Data (90 days)
+                </button>
+                
+                <button
+                  onClick={() => handleDataExport('all')}
+                  className="flex items-center justify-center px-4 py-3 border border-blue-500 rounded-md shadow-sm bg-blue-50 text-sm font-medium text-blue-700 hover:bg-blue-100"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Export All Data
+                </button>
+              </div>
+            </div>
+
+            {/* Privacy Settings */}
+            <div className="bg-white shadow rounded-lg p-6">
+              <h3 className="text-lg font-medium mb-4 flex items-center">
+                <Shield className="h-5 w-5 mr-2" />
+                Privacy Settings
+              </h3>
+              
+              <div className="space-y-6">
+                <div className="flex items-center justify-between py-3 border-b border-gray-200">
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-900">Data Processing</h4>
+                    <p className="text-sm text-gray-600">Allow us to process your data for analytics and insights</p>
+                  </div>
+                  <button className="relative inline-flex h-6 w-11 items-center rounded-full bg-blue-600 transition-colors">
+                    <span className="inline-block h-4 w-4 transform rounded-full bg-white transition-transform translate-x-6" />
+                  </button>
+                </div>
+                
+                <div className="flex items-center justify-between py-3 border-b border-gray-200">
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-900">Anonymous Analytics</h4>
+                    <p className="text-sm text-gray-600">Help improve our service with anonymous usage analytics</p>
+                  </div>
+                  <button className="relative inline-flex h-6 w-11 items-center rounded-full bg-gray-200 transition-colors">
+                    <span className="inline-block h-4 w-4 transform rounded-full bg-white transition-transform translate-x-1" />
+                  </button>
+                </div>
+                
+                <div className="flex items-center justify-between py-3 border-b border-gray-200">
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-900">Data Retention</h4>
+                    <p className="text-sm text-gray-600">Automatically delete old data after specified periods</p>
+                  </div>
+                  <select className="mt-1 block border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                    <option>Keep forever</option>
+                    <option>Delete after 1 year</option>
+                    <option>Delete after 2 years</option>
+                    <option>Delete after 5 years</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Account Deletion */}
+            <div className="bg-white shadow rounded-lg p-6 border-l-4 border-red-500">
+              <h3 className="text-lg font-medium mb-4 text-red-900 flex items-center">
+                <Trash2 className="h-5 w-5 mr-2" />
+                Account Deletion
+              </h3>
+              
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                <div className="flex items-start">
+                  <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 mr-3" />
+                  <div>
+                    <h4 className="text-sm font-medium text-red-800">This action cannot be undone</h4>
+                    <p className="text-sm text-red-700 mt-1">
+                      Deleting your account will permanently remove all your data, including:
+                    </p>
+                    <ul className="text-sm text-red-700 mt-2 list-disc list-inside space-y-1">
+                      <li>All business data and analytics</li>
+                      <li>Integration configurations</li>
+                      <li>Reports and insights</li>
+                      <li>Organization settings</li>
+                      <li>Team member access</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-medium text-red-900">Request Account Deletion</h4>
+                  <p className="text-sm text-red-700">This will start the account deletion process</p>
+                </div>
+                <button className="px-4 py-2 bg-red-600 text-white rounded-md text-sm font-medium hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+                  Delete Account
+                </button>
+              </div>
+            </div>
+
+            {/* Legal Information */}
+            <div className="bg-white shadow rounded-lg p-6">
+              <h3 className="text-lg font-medium mb-4">Legal Information</h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <a 
+                  href="/privacy-policy" 
+                  target="_blank"
+                  className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  Privacy Policy
+                </a>
+                
+                <a 
+                  href="/terms-of-service" 
+                  target="_blank"
+                  className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  Terms of Service
+                </a>
+                
+                <a 
+                  href="/gdpr-compliance" 
+                  target="_blank"
+                  className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  GDPR Compliance
+                </a>
               </div>
             </div>
           </div>

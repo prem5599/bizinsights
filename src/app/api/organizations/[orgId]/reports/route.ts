@@ -9,7 +9,7 @@ import { TeamManager } from '@/lib/team/manager'
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { orgId: string } }
+  { params }: { params: Promise<{ orgId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -17,9 +17,11 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const { orgId } = await params
+
     // Check if user has permission to view reports
     const hasPermission = await TeamManager.hasPermission(
-      params.orgId,
+      orgId,
       session.user.id,
       'canViewReports'
     )
@@ -33,7 +35,7 @@ export async function GET(
     const limit = parseInt(searchParams.get('limit') || '20')
 
     // Build where condition
-    const where: any = { organizationId: params.orgId }
+    const where: any = { organizationId: orgId }
     if (type && ['daily', 'weekly', 'monthly'].includes(type)) {
       where.reportType = type
     }
@@ -57,7 +59,7 @@ export async function GET(
     // Get report statistics
     const stats = await prisma.report.groupBy({
       by: ['reportType'],
-      where: { organizationId: params.orgId },
+      where: { organizationId: orgId },
       _count: { id: true }
     })
 
@@ -86,7 +88,7 @@ export async function GET(
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { orgId: string } }
+  { params }: { params: Promise<{ orgId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -94,9 +96,11 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const { orgId } = await params
+
     // Check if user has permission to generate reports
     const hasPermission = await TeamManager.hasPermission(
-      params.orgId,
+      orgId,
       session.user.id,
       'canViewReports'
     )
@@ -120,14 +124,14 @@ export async function POST(
             return NextResponse.json({ error: 'Start and end dates are required for custom reports' }, { status: 400 })
           }
           reportData = await ReportGenerator.generateCustomReport(
-            params.orgId,
+            orgId,
             new Date(startDate),
             new Date(endDate)
           )
         } else if (reportType === 'weekly') {
-          reportData = await ReportGenerator.generateWeeklyReport(params.orgId)
+          reportData = await ReportGenerator.generateWeeklyReport(orgId)
         } else {
-          reportData = await ReportGenerator.generateMonthlyReport(params.orgId)
+          reportData = await ReportGenerator.generateMonthlyReport(orgId)
         }
 
         // Send email if requested
@@ -159,7 +163,7 @@ export async function POST(
 
         // Get report
         const report = await prisma.report.findFirst({
-          where: { id: reportId, organizationId: params.orgId }
+          where: { id: reportId, organizationId: orgId }
         })
 
         if (!report) {
@@ -168,7 +172,7 @@ export async function POST(
 
         // Send to team
         const emailResult = await ReportEmailer.sendReportToOrganization(
-          params.orgId,
+          orgId,
           report.content as any,
           report.reportType as 'weekly' | 'monthly'
         )
@@ -202,7 +206,7 @@ export async function POST(
 // Get individual report
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { orgId: string } }
+  { params }: { params: Promise<{ orgId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -210,8 +214,10 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const { orgId } = await params
+
     const hasPermission = await TeamManager.hasPermission(
-      params.orgId,
+      orgId,
       session.user.id,
       'canViewReports'
     )
@@ -225,7 +231,7 @@ export async function PUT(
     const report = await prisma.report.findFirst({
       where: { 
         id: reportId, 
-        organizationId: params.orgId 
+        organizationId: orgId 
       }
     })
 

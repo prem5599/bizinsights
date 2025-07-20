@@ -1,5 +1,4 @@
 // src/types/global.d.ts
-import { DefaultSession } from "next-auth"
 
 declare global {
   namespace NodeJS {

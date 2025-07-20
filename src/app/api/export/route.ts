@@ -4,8 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { 
-  ExportOptions, 
-  ExportFormat,
+  ExportOptions,
   validateExportOptions,
   getContentType,
   generateFilename,
@@ -17,6 +16,11 @@ import {
   exportIntegrations,
   formatExportData
 } from '@/lib/export/exportUtils'
+
+interface DateRange {
+  start: Date
+  end: Date
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -54,7 +58,7 @@ export async function POST(request: NextRequest) {
 
     let exportData: string
     let filename: string
-    let contentType: string
+    const contentType = getContentType(options.format)
 
     switch (exportType) {
       case 'dashboard':
@@ -91,7 +95,6 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Invalid export type' }, { status: 400 })
     }
 
-    contentType = getContentType(options.format)
 
     // Return file for download
     return new NextResponse(exportData, {
@@ -112,7 +115,7 @@ export async function POST(request: NextRequest) {
 }
 
 // Export dashboard data
-async function exportDashboardData(organizationId: string, options: ExportOptions, dateRange: any): Promise<string> {
+async function exportDashboardData(organizationId: string, options: ExportOptions, dateRange: DateRange): Promise<string> {
   // Get metrics
   const metrics = await aggregateMetrics(organizationId, dateRange)
   
@@ -152,7 +155,7 @@ async function exportDashboardData(organizationId: string, options: ExportOption
 }
 
 // Export analytics data
-async function exportAnalyticsData(organizationId: string, options: ExportOptions, dateRange: any): Promise<string> {
+async function exportAnalyticsData(organizationId: string, options: ExportOptions, dateRange: DateRange): Promise<string> {
   const dataPoints = await prisma.dataPoint.findMany({
     where: {
       integration: { organizationId },
@@ -180,7 +183,7 @@ async function exportAnalyticsData(organizationId: string, options: ExportOption
 }
 
 // Export insights data
-async function exportInsightsData(organizationId: string, options: ExportOptions, dateRange: any): Promise<string> {
+async function exportInsightsData(organizationId: string, options: ExportOptions, dateRange: DateRange): Promise<string> {
   const insights = await prisma.insight.findMany({
     where: {
       organizationId,
@@ -221,7 +224,7 @@ async function exportIntegrationsData(organizationId: string, options: ExportOpt
 }
 
 // Export reports data
-async function exportReportsData(organizationId: string, options: ExportOptions, dateRange: any): Promise<string> {
+async function exportReportsData(organizationId: string, options: ExportOptions, dateRange: DateRange): Promise<string> {
   const reports = await prisma.report.findMany({
     where: {
       organizationId,
@@ -250,7 +253,7 @@ async function exportReportsData(organizationId: string, options: ExportOptions,
 }
 
 // Export raw data
-async function exportRawData(organizationId: string, options: ExportOptions, dateRange: any): Promise<string> {
+async function exportRawData(organizationId: string, options: ExportOptions, dateRange: DateRange): Promise<string> {
   const dataPoints = await prisma.dataPoint.findMany({
     where: {
       integration: { organizationId },
@@ -290,7 +293,7 @@ async function exportRawData(organizationId: string, options: ExportOptions, dat
 }
 
 // Helper function to aggregate metrics
-async function aggregateMetrics(organizationId: string, dateRange: any) {
+async function aggregateMetrics(organizationId: string, dateRange: DateRange) {
   const dataPoints = await prisma.dataPoint.groupBy({
     by: ['metricType'],
     where: {
@@ -304,7 +307,7 @@ async function aggregateMetrics(organizationId: string, dateRange: any) {
     _count: { id: true }
   })
 
-  const metrics: any = {}
+  const metrics: Record<string, { current: number; count: number }> = {}
   
   dataPoints.forEach(point => {
     metrics[point.metricType] = {
@@ -320,7 +323,7 @@ async function aggregateMetrics(organizationId: string, dateRange: any) {
 }
 
 // Helper function to get chart data
-async function getChartData(organizationId: string, dateRange: any) {
+async function getChartData(organizationId: string, dateRange: DateRange) {
   const dataPoints = await prisma.dataPoint.findMany({
     where: {
       integration: { organizationId },
@@ -333,7 +336,7 @@ async function getChartData(organizationId: string, dateRange: any) {
     orderBy: { dateRecorded: 'asc' }
   })
 
-  const chartData: any = { revenue: [] }
+  const chartData: { revenue: Array<{ date: string; value: number }> } = { revenue: [] }
   const dateMap = new Map()
 
   dataPoints.forEach(point => {

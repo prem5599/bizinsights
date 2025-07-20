@@ -82,6 +82,6 @@ export interface DataPoint {
   integrationId: string
   metricType: 'revenue' | 'orders' | 'sessions' | 'customers' | 'pageviews'
   value: number
-  metadata: Record<string, any>
+  metadata: Record<string, unknown>
   dateRecorded: Date
 }

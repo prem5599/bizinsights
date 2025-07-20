@@ -10,7 +10,7 @@ import { prisma } from '@/lib/prisma'
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ integrationId: string }> }
 ) {
   try {
     // Check authentication
@@ -22,7 +22,7 @@ export async function GET(
       )
     }
 
-    const integrationId = params.id
+    const { integrationId } = await params
     console.log('📊 Fetching metrics for integration:', integrationId)
 
     // Get integration and verify ownership

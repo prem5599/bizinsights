@@ -42,7 +42,7 @@ export function initSentry() {
 }
 
 // Custom error capture
-export function captureError(error: Error, context: Record<string, any> = {}) {
+export function captureError(error: Error, context: Record<string, unknown> = {}) {
   if (process.env.NODE_ENV === 'production') {
     Sentry.withScope(scope => {
       Object.entries(context).forEach(([key, value]) => {

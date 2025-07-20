@@ -4,18 +4,25 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  image     String?
-  password  String?  // Added for credentials authentication
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  email                String   @unique
+  name                 String?
+  image                String?
+  password             String?  // Added for credentials authentication
+  phone                String?
+  timezone             String?
+  twoFactorEnabled     Boolean  @default(false)
+  passwordUpdatedAt    DateTime?
+  notificationSettings String   @default("{}")
+  securitySettings     String   @default("{}")
+  preferences          String   @default("{}")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   organizations OrganizationMember[]
   accounts      Account[]
@@ -28,12 +35,12 @@ model Account {
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
+  refresh_token     String?
+  access_token      String?
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String? @db.Text
+  id_token          String?
   session_state     String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -58,12 +65,27 @@ model VerificationToken {
 }
 
 model Organization {
-  id               String @id @default(cuid())
-  name             String
-  slug             String @unique
-  subscriptionTier String @default("free")
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                   String    @id @default(cuid())
+  name                 String
+  slug                 String    @unique
+  email                String?
+  website              String?
+  phone                String?
+  address              String?
+  timezone             String    @default("UTC")
+  logo                 String?
+  industry             String    @default("Other")
+  companySize          String    @default("1-10")
+  currency             String    @default("USD")
+  subscriptionTier     String    @default("free")
+  subscriptionStatus   String    @default("active")
+  subscriptionEndsAt   DateTime?
+  trialEndsAt          DateTime?
+  billingEmail         String?
+  billingAddress       String?
+  settings             String    @default("{}")
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   members      OrganizationMember[]
   integrations Integration[]
@@ -106,12 +128,12 @@ model Integration {
   organizationId     String
   platform           String    // shopify, stripe, google_analytics
   platformAccountId  String?
-  accessToken        String?   @db.Text
-  refreshToken       String?   @db.Text
+  accessToken        String?
+  refreshToken       String?
   tokenExpiresAt     DateTime?
   status             String    @default("active")
   lastSyncAt         DateTime?
-  metadata           Json      @default("{}")
+  metadata           String    @default("{}")
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
@@ -126,8 +148,8 @@ model DataPoint {
   id             String   @id @default(cuid())
   integrationId  String
   metricType     String   // revenue, orders, sessions, customers
-  value          Decimal  @db.Decimal(15,2)
-  metadata       Json     @default("{}")
+  value          Float
+  metadata       String   @default("{}")
   dateRecorded   DateTime
   createdAt      DateTime @default(now())
 
@@ -142,10 +164,10 @@ model WebhookEvent {
   topic          String    // webhook topic/event type
   status         String    // received, processed, failed, signature_verification_failed, invalid_json
   externalId     String?   // external event ID from the platform
-  error          String?   @db.Text
+  error          String?
   receivedAt     DateTime  @default(now())
   processedAt    DateTime?
-  metadata       Json      @default("{}")
+  metadata       String    @default("{}")
 
   integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
 
@@ -158,10 +180,10 @@ model Insight {
   organizationId String
   type           String  // trend, anomaly, recommendation
   title          String
-  description    String  @db.Text
+  description    String
   impactScore    Int     // 1-10
   isRead         Boolean @default(false)
-  metadata       Json    @default("{}")
+  metadata       String  @default("{}")
   createdAt      DateTime @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -174,7 +196,7 @@ model Report {
   organizationId   String
   reportType       String   // daily, weekly, monthly
   title            String
-  content          Json
+  content          String
   dateRangeStart   DateTime
   dateRangeEnd     DateTime
   generatedAt      DateTime @default(now())

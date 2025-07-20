@@ -11,7 +11,7 @@ import { ShopifyIntegration } from '@/lib/integrations/shopify'
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { integrationId: string } }
+  { params }: { params: Promise<{ integrationId: string }> }
 ) {
   try {
     // Check authentication
@@ -23,7 +23,7 @@ export async function GET(
       )
     }
 
-    const integrationId = params.integrationId
+    const { integrationId } = await params
     console.log('📊 Getting sync status for integration:', integrationId)
 
     // Get integration and verify ownership
@@ -124,7 +124,7 @@ export async function GET(
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { integrationId: string } }
+  { params }: { params: Promise<{ integrationId: string }> }
 ) {
   try {
     // Check authentication
@@ -136,7 +136,7 @@ export async function POST(
       )
     }
 
-    const integrationId = params.integrationId
+    const { integrationId } = await params
     const body = await request.json().catch(() => ({}))
     const { 
       syncType = 'incremental', 
@@ -564,24 +564,27 @@ async function performShopifySync(integration: any, syncType: string) {
         throw new Error('Failed to connect to Shopify store')
       }
 
-      // Determine sync date range
-      let since: Date
+      // Determine sync days back
+      let daysBack: number
       if (syncType === 'full') {
-        since = new Date('2020-01-01') // Full historical sync
+        daysBack = 365 * 2 // 2 years of historical data
       } else {
-        since = integration.lastSyncAt || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) // Last 30 days
+        daysBack = integration.lastSyncAt ? 30 : 365 // 30 days or 1 year if never synced
       }
 
       // Perform the sync
-      const result = await shopifyIntegration.syncOrders(since)
+      const result = await shopifyIntegration.syncHistoricalData(integration.id, daysBack)
 
       return {
-        recordsProcessed: result.recordsProcessed || 0,
-        errors: result.errors || [],
+        recordsProcessed: result.orders + result.customers + result.products,
+        errors: [],
         metadata: {
           syncType,
-          dateRange: { start: since, end: new Date() },
-          platform: 'shopify'
+          daysBack,
+          platform: 'shopify',
+          orders: result.orders,
+          customers: result.customers,
+          products: result.products
         }
       }
     }

@@ -6,7 +6,7 @@ import { TeamManager } from '@/lib/team/manager'
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { orgId: string } }
+  { params }: { params: Promise<{ orgId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -14,9 +14,11 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const { orgId } = await params
+
     // Check if user has permission to view team
     const hasPermission = await TeamManager.hasPermission(
-      params.orgId,
+      orgId,
       session.user.id,
       'canRead'
     )
@@ -27,8 +29,8 @@ export async function GET(
 
     // Get team members and pending invitations
     const [members, invitations] = await Promise.all([
-      TeamManager.getTeamMembers(params.orgId),
-      TeamManager.getPendingInvitations(params.orgId)
+      TeamManager.getTeamMembers(orgId),
+      TeamManager.getPendingInvitations(orgId)
     ])
 
     return NextResponse.json({
@@ -49,7 +51,7 @@ export async function GET(
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { orgId: string } }
+  { params }: { params: Promise<{ orgId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -57,9 +59,11 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const { orgId } = await params
+
     // Check if user has permission to invite
     const hasPermission = await TeamManager.hasPermission(
-      params.orgId,
+      orgId,
       session.user.id,
       'canInvite'
     )
@@ -81,7 +85,7 @@ export async function POST(
         }
 
         const inviteResult = await TeamManager.inviteTeamMember(
-          params.orgId,
+          orgId,
           email,
           role,
           session.user.id
@@ -107,7 +111,7 @@ export async function POST(
         }
 
         const updateResult = await TeamManager.updateMemberRole(
-          params.orgId,
+          orgId,
           memberId,
           newRole,
           session.user.id
@@ -128,7 +132,7 @@ export async function POST(
         }
 
         const removeResult = await TeamManager.removeMember(
-          params.orgId,
+          orgId,
           memberId,
           session.user.id
         )
@@ -148,7 +152,7 @@ export async function POST(
         }
 
         const cancelResult = await TeamManager.cancelInvitation(
-          params.orgId,
+          orgId,
           invitationId,
           session.user.id
         )

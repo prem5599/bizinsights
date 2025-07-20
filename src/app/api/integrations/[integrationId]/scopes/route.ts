@@ -11,7 +11,7 @@ import { ShopifyScopeManager } from '@/lib/integrations/shopify-scopes'
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { integrationId: string } }
+  { params }: { params: Promise<{ integrationId: string }> }
 ) {
   try {
     // Check authentication
@@ -23,7 +23,7 @@ export async function GET(
       )
     }
 
-    const integrationId = params.integrationId
+    const { integrationId } = await params
     console.log('📋 Fetching scopes for integration:', integrationId)
 
     // Get integration and verify ownership
@@ -126,7 +126,7 @@ export async function GET(
  */
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { integrationId: string } }
+  { params }: { params: Promise<{ integrationId: string }> }
 ) {
   try {
     // Check authentication
@@ -138,7 +138,7 @@ export async function PUT(
       )
     }
 
-    const integrationId = params.integrationId
+    const { integrationId } = await params
     const body = await request.json()
     const { scopes, forceUpdate = false } = body
 
@@ -320,7 +320,7 @@ export async function PUT(
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { integrationId: string } }
+  { params }: { params: Promise<{ integrationId: string }> }
 ) {
   try {
     // Check authentication

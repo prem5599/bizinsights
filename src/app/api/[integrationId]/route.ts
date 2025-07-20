@@ -12,7 +12,7 @@ const updateIntegrationSchema = z.object({
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { integrationId: string } }
+  { params }: { params: Promise<{ integrationId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -20,7 +20,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { integrationId } = params
+    const { integrationId } = await params
 
     // Find the integration and verify user has access
     const integration = await prisma.integration.findFirst({
@@ -98,7 +98,7 @@ export async function GET(
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { integrationId: string } }
+  { params }: { params: Promise<{ integrationId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -106,7 +106,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { integrationId } = params
+    const { integrationId } = await params
     const body = await req.json()
 
     // Validate request body
@@ -197,7 +197,7 @@ export async function PATCH(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { integrationId: string } }
+  { params }: { params: Promise<{ integrationId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -205,7 +205,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { integrationId } = params
+    const { integrationId } = await params
 
     // Verify user has access to this integration
     const existingIntegration = await prisma.integration.findFirst({

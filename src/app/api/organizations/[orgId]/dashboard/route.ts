@@ -10,7 +10,7 @@ import { prisma } from '@/lib/prisma'
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { orgId: string } }
+  { params }: { params: Promise<{ orgId: string }> }
 ) {
   try {
     // Check authentication
@@ -22,7 +22,7 @@ export async function GET(
       )
     }
 
-    const orgId = params.orgId
+    const { orgId } = await params
     console.log('📊 Fetching dashboard data for organization:', orgId)
 
     // Verify user has access to this organization

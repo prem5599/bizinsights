@@ -6,7 +6,7 @@ import { prisma } from '@/lib/prisma'
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { orgId: string; insightId: string } }
+  { params }: { params: Promise<{ orgId: string; insightId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -14,7 +14,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { orgId, insightId } = params
+    const { orgId, insightId } = await params
 
     // Get insight with organization membership check
     const insight = await prisma.insight.findFirst({
@@ -68,7 +68,7 @@ export async function GET(
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { orgId: string; insightId: string } }
+  { params }: { params: Promise<{ orgId: string; insightId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -76,7 +76,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { orgId, insightId } = params
+    const { orgId, insightId } = await params
     const body = await req.json()
     const { isRead, title, description, impactScore, metadata } = body
 
@@ -158,7 +158,7 @@ export async function PATCH(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { orgId: string; insightId: string } }
+  { params }: { params: Promise<{ orgId: string; insightId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -166,7 +166,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { orgId, insightId } = params
+    const { orgId, insightId } = await params
 
     // Verify user has admin access to delete insights
     const member = await prisma.organizationMember.findFirst({

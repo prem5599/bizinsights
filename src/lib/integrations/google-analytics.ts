@@ -606,7 +606,7 @@ export class GoogleAnalyticsIntegration {
       }
 
       // Store daily data points
-      const dataPoints = []
+      const dataPoints: any[] = []
       for (const row of response.rows) {
         const date = row.dimensionValues[0]?.values[0] || ''
         const dateRecorded = new Date(`${date.slice(0,4)}-${date.slice(4,6)}-${date.slice(6,8)}`)

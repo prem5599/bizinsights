@@ -160,25 +160,39 @@ export default function AnalyticsPage() {
   }, [session?.user?.id])
 
   useEffect(() => {
-    // In a real application, fetch analytics data from your API
-    // fetchAnalyticsData()
-  }, [dateRange])
+    if (organizationId) {
+      fetchAnalyticsData()
+    }
+  }, [dateRange, organizationId])
 
   const fetchAnalyticsData = async () => {
+    if (!organizationId) return
+    
     setLoading(true)
     try {
-      // This would be your actual API call
-      // const response = await fetch(`/api/analytics?range=${dateRange}`)
-      // const analyticsData = await response.json()
-      // setData(analyticsData)
+      console.log('🔄 Fetching analytics data for:', organizationId, 'range:', dateRange)
       
-      // For now, using mock data
-      setTimeout(() => {
-        setData(mockAnalyticsData)
-        setLoading(false)
-      }, 1000)
+      const response = await fetch(`/api/analytics?range=${dateRange}&organizationId=${organizationId}`, {
+        credentials: 'include'
+      })
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch analytics: ${response.status}`)
+      }
+      
+      const result = await response.json()
+      console.log('✅ Analytics data received:', result)
+      
+      if (result.success) {
+        setData(result)
+      } else {
+        throw new Error(result.error || 'Failed to load analytics data')
+      }
     } catch (error) {
-      console.error('Failed to fetch analytics data:', error)
+      console.error('❌ Failed to fetch analytics data:', error)
+      // Fallback to mock data on error
+      setData(mockAnalyticsData)
+    } finally {
       setLoading(false)
     }
   }
@@ -188,9 +202,9 @@ export default function AnalyticsPage() {
   }
 
   const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('en-IN', {
       style: 'currency',
-      currency: 'USD',
+      currency: 'INR',
       minimumFractionDigits: 0,
     }).format(value)
   }
@@ -325,7 +339,7 @@ export default function AnalyticsPage() {
                   <YAxis 
                     stroke="#64748b"
                     fontSize={12}
-                    tickFormatter={(value) => `$${value.toLocaleString()}`}
+                    tickFormatter={(value) => `₹${value.toLocaleString()}`}
                   />
                   <Tooltip 
                     formatter={(value: number) => [formatCurrency(value), 'Revenue']}

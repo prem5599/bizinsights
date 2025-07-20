@@ -12,7 +12,8 @@ import {
   Filter, 
   RefreshCw,
   CheckCircle,
-  Plus
+  Plus,
+  Sparkles
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -56,6 +57,7 @@ export default function InsightsPage() {
   const [selectedType, setSelectedType] = useState<string>('all')
   const [showUnreadOnly, setShowUnreadOnly] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [generating, setGenerating] = useState(false)
   const [page, setPage] = useState(1)
 
   useEffect(() => {
@@ -283,6 +285,47 @@ export default function InsightsPage() {
     }
   }
 
+  const handleGenerateInsights = async () => {
+    try {
+      setGenerating(true)
+      setError(null)
+
+      console.log('Generating insights...')
+
+      // Let the API auto-detect the user's organization
+      const response = await fetch('/api/insights/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          timeframe: {
+            start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(), // Last 30 days
+            end: new Date().toISOString()
+          }
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error('Insights generation failed:', errorData)
+        throw new Error(errorData.error || 'Failed to generate insights')
+      }
+
+      const result = await response.json()
+      
+      // Refresh insights after generation
+      await fetchInsights()
+      
+      // Show success message (could be replaced with toast notification)
+      console.log(`✅ ${result.message}`)
+      
+    } catch (error) {
+      console.error('Error generating insights:', error)
+      setError(error instanceof Error ? error.message : 'Failed to generate insights')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
   // Show loading state
   if (loading || status === 'loading') {
     return (
@@ -332,6 +375,19 @@ export default function InsightsPage() {
             
             <div className="flex items-center space-x-3">
               <button
+                onClick={handleGenerateInsights}
+                disabled={generating}
+                className={cn(
+                  "inline-flex items-center px-4 py-2 text-sm font-medium rounded-md",
+                  "bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-700 hover:to-blue-700",
+                  "disabled:opacity-50 disabled:cursor-not-allowed"
+                )}
+              >
+                <Sparkles className={cn("h-4 w-4 mr-2", generating && "animate-pulse")} />
+                {generating ? 'Generating...' : 'Generate Insights'}
+              </button>
+              
+              <button
                 onClick={handleRefresh}
                 disabled={refreshing}
                 className={cn(
@@ -356,6 +412,22 @@ export default function InsightsPage() {
             </div>
           </div>
         </div>
+
+        {/* Error Display */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <div className="flex items-center">
+              <AlertTriangle className="h-5 w-5 text-red-600 mr-2" />
+              <div className="text-sm text-red-800">{error}</div>
+              <button
+                onClick={() => setError(null)}
+                className="ml-auto text-red-600 hover:text-red-800"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Summary Stats */}
         {data && (

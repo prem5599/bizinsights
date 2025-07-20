@@ -302,7 +302,13 @@ export class ReportGenerator {
     startDate: Date,
     endDate: Date
   ) {
-    const recommendations = []
+    const recommendations: Array<{
+      category: string
+      title: string
+      description: string
+      priority: 'high' | 'medium' | 'low'
+      actionable: boolean
+    }> = []
 
     // Get basic metrics for analysis
     const totals = await prisma.$queryRaw`
@@ -419,7 +425,7 @@ export class ReportGenerator {
         organizationId,
         reportType: reportData.period.type,
         title: `${reportData.period.type.charAt(0).toUpperCase() + reportData.period.type.slice(1)} Report - ${reportData.period.start.toLocaleDateString()}`,
-        content: reportData,
+        content: reportData as any,
         dateRangeStart: reportData.period.start,
         dateRangeEnd: reportData.period.end
       }

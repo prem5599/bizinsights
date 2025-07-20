@@ -5,6 +5,10 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+// Simple in-memory cache for insights
+const insightsCache = new Map<string, { data: unknown; timestamp: number }>()
+const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
+
 // Validation schema for creating insights
 const createInsightSchema = z.object({
   organizationId: z.string().min(1),
@@ -52,8 +56,17 @@ export async function GET(req: NextRequest) {
 
     const { organizationId, type, isRead, limit, offset } = validation.data
 
+    // Generate cache key
+    const cacheKey = `insights:${session.user.id}:${organizationId || 'all'}:${type || 'all'}:${isRead || 'all'}:${limit}:${offset}`
+    
+    // Check cache first
+    const cached = insightsCache.get(cacheKey)
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      return NextResponse.json(cached.data)
+    }
+
     // Build where clause
-    let whereClause: any = {}
+    let whereClause: Record<string, unknown> = {}
 
     // If organizationId is provided, verify user has access
     if (organizationId) {
@@ -208,7 +221,7 @@ export async function GET(req: NextRequest) {
     const currentPage = Math.floor(offset / limit) + 1
     const totalPages = Math.ceil(totalCount / limit)
 
-    return NextResponse.json({
+    const responseData = {
       insights: transformedInsights,
       pagination: {
         currentPage,
@@ -224,7 +237,12 @@ export async function GET(req: NextRequest) {
         readCount,
         typeBreakdown
       }
-    })
+    }
+
+    // Cache the response
+    insightsCache.set(cacheKey, { data: responseData, timestamp: Date.now() })
+
+    return NextResponse.json(responseData)
 
   } catch (error) {
     console.error('GET insights API error:', error)
@@ -296,6 +314,12 @@ export async function POST(req: NextRequest) {
       }
     })
 
+    // Invalidate cache for this organization
+    const cacheKeysToInvalidate = Array.from(insightsCache.keys()).filter(key => 
+      key.includes(`${session.user.id}`) && key.includes(organizationId)
+    )
+    cacheKeysToInvalidate.forEach(key => insightsCache.delete(key))
+
     return NextResponse.json({
       success: true,
       insight: {
@@ -353,7 +377,7 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
-    let updateData: any = {}
+    let updateData: Record<string, unknown> = {}
     
     switch (action) {
       case 'mark_read':
@@ -367,7 +391,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     // Build where clause for the insights
-    let whereClause: any = {
+    let whereClause: Record<string, unknown> = {
       id: {
         in: insightIds
       }
@@ -396,6 +420,20 @@ export async function PATCH(req: NextRequest) {
       where: whereClause,
       data: updateData
     })
+
+    // Invalidate cache for affected organizations
+    if (organizationId) {
+      const cacheKeysToInvalidate = Array.from(insightsCache.keys()).filter(key => 
+        key.includes(`${session.user.id}`) && key.includes(organizationId)
+      )
+      cacheKeysToInvalidate.forEach(key => insightsCache.delete(key))
+    } else {
+      // Clear all cache entries for this user
+      const cacheKeysToInvalidate = Array.from(insightsCache.keys()).filter(key => 
+        key.includes(`${session.user.id}`)
+      )
+      cacheKeysToInvalidate.forEach(key => insightsCache.delete(key))
+    }
 
     return NextResponse.json({
       success: true,

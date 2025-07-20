@@ -13,23 +13,23 @@ const signInSchema = z.object({
   password: z.string().min(6, "Password must be at least 6 characters"),
 })
 
-// Environment variable validation
-const requiredEnvVars = {
+// Environment variable validation (only check critical ones)
+const criticalEnvVars = {
   NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
-  NEXTAUTH_URL: process.env.NEXTAUTH_URL,
   DATABASE_URL: process.env.DATABASE_URL,
-  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
-  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
 }
 
-// Check for missing environment variables
-const missingEnvVars = Object.entries(requiredEnvVars)
+// Check for missing critical environment variables
+const missingCriticalVars = Object.entries(criticalEnvVars)
   .filter(([key, value]) => !value)
   .map(([key]) => key)
 
-if (missingEnvVars.length > 0) {
-  console.error(`❌ Missing required environment variables: ${missingEnvVars.join(', ')}`)
-  throw new Error(`Missing required environment variables: ${missingEnvVars.join(', ')}`)
+if (missingCriticalVars.length > 0) {
+  console.error(`❌ Missing critical environment variables: ${missingCriticalVars.join(', ')}`)
+  // Don't throw in development - just warn
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(`Missing critical environment variables: ${missingCriticalVars.join(', ')}`)
+  }
 }
 
 export const authOptions: NextAuthOptions = {
@@ -40,9 +40,9 @@ export const authOptions: NextAuthOptions = {
     updateAge: 24 * 60 * 60, // 24 hours
   },
   providers: [
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET ? [GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       authorization: {
         params: {
           prompt: "consent",
@@ -51,7 +51,7 @@ export const authOptions: NextAuthOptions = {
           scope: "openid email profile"
         }
       }
-    }),
+    })] : []),
     CredentialsProvider({
       id: "credentials",
       name: "credentials",

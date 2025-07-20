@@ -6,7 +6,7 @@ import { prisma } from '@/lib/prisma'
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { insightId: string } }
+  { params }: { params: Promise<{ insightId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -14,7 +14,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { insightId } = params
+    const { insightId } = await params
 
     // Get insight with organization access check
     const insight = await prisma.insight.findFirst({
@@ -61,7 +61,7 @@ export async function GET(
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { insightId: string } }
+  { params }: { params: Promise<{ insightId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -69,7 +69,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { insightId } = params
+    const { insightId } = await params
     const body = await req.json()
     const { isRead } = body
 
@@ -117,7 +117,7 @@ export async function PATCH(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { insightId: string } }
+  { params }: { params: Promise<{ insightId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -125,7 +125,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { insightId } = params
+    const { insightId } = await params
 
     // Verify access and delete
     const insight = await prisma.insight.findFirst({

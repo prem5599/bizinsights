@@ -299,11 +299,11 @@ async function performShopifySync(integration: any) {
     throw new Error('Failed to connect to Shopify store')
   }
 
-  // Determine sync start date
-  const since = integration.lastSyncAt || new Date('2024-01-01')
+  // Determine sync days back (30 days default, or full history if never synced)
+  const daysBack = integration.lastSyncAt ? 30 : 365
   
-  // Sync orders (most important for analytics)
-  const orderSyncResult = await shopifyIntegration.syncOrders(since)
+  // Sync historical data (orders, customers, products)
+  const syncResult = await shopifyIntegration.syncHistoricalData(integration.id, daysBack)
 
   // Get additional metrics
   const totalDataPoints = await prisma.dataPoint.count({
@@ -320,13 +320,16 @@ async function performShopifySync(integration: any) {
   })
 
   return {
-    success: orderSyncResult.success,
-    recordsProcessed: orderSyncResult.recordsProcessed,
-    errors: orderSyncResult.errors,
+    success: true,
+    recordsProcessed: syncResult.orders + syncResult.customers + syncResult.products,
+    errors: [],
     metrics: {
       totalDataPoints,
       recentDataPoints,
-      syncDuration: Date.now() - integration.lastSyncAt?.getTime() || 0
+      syncDuration: Date.now() - integration.lastSyncAt?.getTime() || 0,
+      orders: syncResult.orders,
+      customers: syncResult.customers,
+      products: syncResult.products
     },
     timestamp: new Date().toISOString()
   }

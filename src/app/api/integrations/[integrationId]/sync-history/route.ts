@@ -10,7 +10,7 @@ import { prisma } from '@/lib/prisma'
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { integrationId: string } }
+  { params }: { params: Promise<{ integrationId: string }> }
 ) {
   try {
     // Check authentication
@@ -22,7 +22,7 @@ export async function GET(
       )
     }
 
-    const integrationId = params.integrationId
+    const { integrationId } = await params
     const { searchParams } = new URL(request.url)
     
     // Parse query parameters
@@ -200,7 +200,7 @@ export async function GET(
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { integrationId: string } }
+  { params }: { params: Promise<{ integrationId: string }> }
 ) {
   try {
     // Check authentication
@@ -212,7 +212,7 @@ export async function DELETE(
       )
     }
 
-    const integrationId = params.integrationId
+    const { integrationId } = await params
     const { searchParams } = new URL(request.url)
     
     // Parse parameters

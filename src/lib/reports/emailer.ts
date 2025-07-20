@@ -1,5 +1,6 @@
 // lib/reports/emailer.ts
 import { ReportData } from './generator'
+import { prisma } from '@/lib/prisma'
 
 export class ReportEmailer {
   /**

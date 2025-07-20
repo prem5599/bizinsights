@@ -672,7 +672,7 @@ async function processOrderCreated(
   integrationId: string,
   order: ShopifyOrder
 ): Promise<{ success: boolean; processed: number }> {
-  const dataPoints = []
+  const dataPoints: any[] = []
 
   // Create order count data point
   dataPoints.push({

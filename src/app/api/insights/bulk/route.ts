@@ -44,7 +44,7 @@ export async function PATCH(req: NextRequest) {
       )
     }
 
-    let updateData: any = {}
+    let updateData: Record<string, unknown> = {}
     let message = ''
 
     switch (action) {
@@ -73,7 +73,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     // Update insights
-    let result: any
+    let result: { count: number }
     if (action === 'markAllAsRead') {
       // Mark all insights in the organization as read
       result = await prisma.insight.updateMany({

@@ -22,7 +22,7 @@ export interface InsightData {
     previousValue?: number
     changePercent?: number
     trend?: 'up' | 'down' | 'stable'
-    data?: any
+    data?: Record<string, unknown>
   }
 }
 
@@ -38,13 +38,13 @@ export interface AnalyticsSnapshot {
     aov: { current: number; previous: number; change: number }
   }
   trends: Array<{ date: string; revenue: number; orders: number; sessions: number }>
-  comparisons: { industry?: any; seasonality?: any }
+  comparisons: { industry?: Record<string, unknown>; seasonality?: Record<string, unknown> }
 }
 
 /**
  * AI Insights Engine Class
  */
-export class AIInsightsEngine {
+export class InsightsEngine {
   private organizationId: string
 
   constructor(organizationId: string) {
@@ -81,6 +81,9 @@ export class AIInsightsEngine {
       
       // Customer behavior insights
       insights.push(...await this.analyzeCustomerBehavior(snapshot))
+      
+      // Product performance insights
+      insights.push(...await this.analyzeProductPerformance(snapshot))
       
       // Sort by impact score and confidence
       insights.sort((a, b) => (b.impactScore * b.confidence) - (a.impactScore * a.confidence))
@@ -642,6 +645,223 @@ export class AIInsightsEngine {
   }
 
   /**
+   * Analyze product performance patterns
+   */
+  private async analyzeProductPerformance(snapshot: AnalyticsSnapshot): Promise<InsightData[]> {
+    const insights: InsightData[] = []
+
+    try {
+      // Get product revenue data from metadata
+      const productData = await prisma.dataPoint.findMany({
+        where: {
+          integration: { organizationId: this.organizationId },
+          metricType: 'revenue',
+          dateRecorded: { 
+            gte: snapshot.timeframe.start, 
+            lte: snapshot.timeframe.end 
+          }
+        },
+        select: {
+          value: true,
+          metadata: true,
+          dateRecorded: true
+        }
+      })
+
+      if (productData.length === 0) {
+        return insights
+      }
+
+      // Aggregate product performance
+      const productPerformance = new Map<string, { revenue: number, orders: number, lastSale: Date }>()
+
+      productData.forEach(point => {
+        const metadata = point.metadata as { title?: string; name?: string; product_title?: string; [key: string]: unknown }
+        const productName = metadata?.title || metadata?.name || metadata?.product_title || 'Unknown Product'
+        
+        if (!productPerformance.has(productName)) {
+          productPerformance.set(productName, { 
+            revenue: 0, 
+            orders: 0, 
+            lastSale: point.dateRecorded 
+          })
+        }
+
+        const product = productPerformance.get(productName)!
+        product.revenue += Number(point.value)
+        product.orders += 1
+        
+        if (point.dateRecorded > product.lastSale) {
+          product.lastSale = point.dateRecorded
+        }
+      })
+
+      // Convert to array and sort by revenue
+      const products = Array.from(productPerformance.entries())
+        .map(([name, data]) => ({ name, ...data }))
+        .sort((a, b) => b.revenue - a.revenue)
+
+      // Top performing product insight
+      if (products.length > 0 && products[0].revenue > 0) {
+        const topProduct = products[0]
+        const totalRevenue = snapshot.metrics.revenue.current
+        const productShare = totalRevenue > 0 ? (topProduct.revenue / totalRevenue) * 100 : 0
+
+        if (productShare > 30) {
+          insights.push({
+            type: 'trend',
+            title: 'Top Product Driving Revenue',
+            description: `${topProduct.name} is your star performer, generating ${productShare.toFixed(1)}% of total revenue ($${topProduct.revenue.toFixed(2)}). Consider expanding this product line or creating similar offerings.`,
+            impactScore: Math.min(productShare / 10, 10),
+            confidence: 95,
+            category: 'Product Performance',
+            priority: 'medium',
+            actionable: true,
+            metadata: {
+              metricType: 'product_performance',
+              timeframe: 'current_period',
+              value: topProduct.revenue,
+              data: {
+                productName: topProduct.name,
+                revenue: topProduct.revenue,
+                orders: topProduct.orders,
+                marketShare: productShare,
+                avgOrderValue: topProduct.revenue / topProduct.orders
+              }
+            }
+          })
+        }
+      }
+
+      // Underperforming products insight
+      if (products.length >= 3) {
+        const lowPerformers = products.slice(-3).filter(p => p.revenue > 0)
+        if (lowPerformers.length > 0) {
+          const avgRevenue = products.reduce((sum, p) => sum + p.revenue, 0) / products.length
+          const underperformers = lowPerformers.filter(p => p.revenue < avgRevenue * 0.5)
+
+          if (underperformers.length > 0) {
+            insights.push({
+              type: 'recommendation',
+              title: 'Review Underperforming Products',
+              description: `${underperformers.length} products are generating significantly below-average revenue. Consider repricing, improving descriptions, or discontinuing these items to focus on better performers.`,
+              impactScore: 6,
+              confidence: 80,
+              category: 'Product Optimization',
+              priority: 'medium',
+              actionable: true,
+              metadata: {
+                metricType: 'product_optimization',
+                timeframe: 'current_period',
+                data: {
+                  underperformers: underperformers.map(p => ({
+                    name: p.name,
+                    revenue: p.revenue,
+                    orders: p.orders
+                  })),
+                  avgRevenue,
+                  recommendations: [
+                    'Review product pricing',
+                    'Improve product descriptions',
+                    'Enhance product images',
+                    'Consider discontinuing poor performers',
+                    'Bundle with popular products'
+                  ]
+                }
+              }
+            })
+          }
+        }
+      }
+
+      // Product portfolio diversity insight
+      if (products.length >= 5) {
+        const top3Revenue = products.slice(0, 3).reduce((sum, p) => sum + p.revenue, 0)
+        const totalRevenue = products.reduce((sum, p) => sum + p.revenue, 0)
+        const concentration = totalRevenue > 0 ? (top3Revenue / totalRevenue) * 100 : 0
+
+        if (concentration > 80) {
+          insights.push({
+            type: 'recommendation',
+            title: 'Diversify Product Portfolio',
+            description: `Your top 3 products generate ${concentration.toFixed(1)}% of revenue. While having strong performers is good, consider diversifying your portfolio to reduce risk and capture more market opportunities.`,
+            impactScore: 7,
+            confidence: 85,
+            category: 'Portfolio Strategy',
+            priority: 'medium',
+            actionable: true,
+            metadata: {
+              metricType: 'portfolio_diversity',
+              timeframe: 'current_period',
+              value: concentration,
+              data: {
+                topProducts: products.slice(0, 3).map(p => ({
+                  name: p.name,
+                  revenue: p.revenue,
+                  share: totalRevenue > 0 ? (p.revenue / totalRevenue) * 100 : 0
+                })),
+                concentration,
+                totalProducts: products.length,
+                strategies: [
+                  'Launch complementary products',
+                  'Expand into adjacent categories',
+                  'Test new product variations',
+                  'Analyze customer needs gaps',
+                  'Consider seasonal products'
+                ]
+              }
+            }
+          })
+        }
+      }
+
+      // Inventory velocity insight (products with recent sales)
+      const now = new Date()
+      const recentThreshold = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) // 7 days ago
+      const fastMovers = products.filter(p => p.lastSale > recentThreshold && p.orders >= 3)
+
+      if (fastMovers.length > 0 && products.length > fastMovers.length) {
+        insights.push({
+          type: 'opportunity',
+          title: 'Fast-Moving Products Identified',
+          description: `${fastMovers.length} products have high velocity with recent sales. Consider increasing inventory, featuring these prominently, or creating bundles with slower-moving items.`,
+          impactScore: 6,
+          confidence: 75,
+          category: 'Inventory Management',
+          priority: 'medium',
+          actionable: true,
+          metadata: {
+            metricType: 'inventory_velocity',
+            timeframe: 'recent_week',
+            data: {
+              fastMovers: fastMovers.slice(0, 5).map(p => ({
+                name: p.name,
+                revenue: p.revenue,
+                orders: p.orders,
+                lastSale: p.lastSale.toISOString()
+              })),
+              totalFastMovers: fastMovers.length,
+              strategies: [
+                'Increase inventory for fast movers',
+                'Feature in prominent positions',
+                'Create bundles with slow movers',
+                'Analyze what makes them popular',
+                'Expand similar product lines'
+              ]
+            }
+          }
+        })
+      }
+
+    } catch (error) {
+      console.error('Error analyzing product performance:', error)
+      // Return empty array if analysis fails
+    }
+
+    return insights
+  }
+
+  /**
    * Save insights to database
    */
   private async saveInsights(insights: InsightData[]): Promise<void> {
@@ -680,7 +900,7 @@ export class AIInsightsEngine {
   /**
    * Get recent insights for an organization
    */
-  async getRecentInsights(limit: number = 10): Promise<any[]> {
+  async getRecentInsights(limit: number = 10): Promise<Array<{ id: string; type: string; title: string; description: string; impactScore: number; isRead: boolean; metadata: Record<string, unknown>; createdAt: Date; updatedAt: Date; organizationId: string }>> {
     return prisma.insight.findMany({
       where: { organizationId: this.organizationId },
       orderBy: { createdAt: 'desc' },
@@ -721,7 +941,7 @@ export async function generateInsightsForAllOrganizations(): Promise<void> {
 
   for (const org of organizations) {
     try {
-      const engine = new AIInsightsEngine(org.id)
+      const engine = new InsightsEngine(org.id)
       await engine.generateInsights(timeframe)
       console.log(`Generated insights for organization: ${org.name}`)
     } catch (error) {
