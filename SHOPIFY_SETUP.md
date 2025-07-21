@@ -75,7 +75,7 @@ curl -X GET "https://your-store.myshopify.com/admin/api/2023-10/shop.json" \
 ```
 
 ### 3. Integration Test in App
-1. Go to `http://localhost:3001/dashboard/integrations`
+1. Go to `http://localhost:3000/dashboard/integrations`
 2. Click "Add Integration" → "Shopify"
 3. Follow the connection flow
 4. Check that data appears in your dashboard

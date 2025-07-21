@@ -6,7 +6,7 @@ async function testDemoIntegration() {
   
   try {
     // Check if dev server is running
-    const response = await fetch('http://localhost:3001/');
+    const response = await fetch('http://localhost:3000/');
     if (!response.ok) {
       console.log('❌ Dev server not running. Please run: npm run dev');
       return;
@@ -15,7 +15,7 @@ async function testDemoIntegration() {
     
     // Test demo endpoint (should require auth)
     try {
-      const demoResponse = await fetch('http://localhost:3001/api/integrations/shopify/demo', {
+      const demoResponse = await fetch('http://localhost:3000/api/integrations/shopify/demo', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -36,7 +36,7 @@ async function testDemoIntegration() {
     }
     
     console.log('\n🎯 Demo Integration Test Instructions:');
-    console.log('1. Open http://localhost:3001 in your browser');
+    console.log('1. Open http://localhost:3000 in your browser');
     console.log('2. Sign in with Google OAuth');
     console.log('3. Go to Dashboard → Integrations');
     console.log('4. Click "Add Integration" → "Shopify"');

@@ -42,3 +42,13 @@ next-env.d.ts
 
 /src/generated/prisma
 /bizinsights
+
+# Test files
+test-*.js
+test-*.ts
+
+# Claude Code
+.claude/
+CLAUDE.md
+claude-*
+.claude_history

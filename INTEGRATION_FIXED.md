@@ -58,7 +58,7 @@ npm run dev
 node test-demo-integration.js
 
 # 3. In browser:
-# - Go to http://localhost:3001
+# - Go to http://localhost:3000
 # - Sign in with Google
 # - Navigate to Dashboard → Integrations
 # - Click "Add Integration" → "Shopify"

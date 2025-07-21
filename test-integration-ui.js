@@ -6,7 +6,7 @@ async function testIntegrationUI() {
   
   try {
     // Check if dev server is running
-    const response = await fetch('http://localhost:3001/');
+    const response = await fetch('http://localhost:3000/');
     if (!response.ok) {
       console.log('❌ Dev server not running. Please run: npm run dev');
       return;
@@ -18,7 +18,7 @@ async function testIntegrationUI() {
     
     // Test health endpoint
     try {
-      const healthResponse = await fetch('http://localhost:3001/api/health');
+      const healthResponse = await fetch('http://localhost:3000/api/health');
       console.log(`✅ Health API: ${healthResponse.status}`);
     } catch (error) {
       console.log(`❌ Health API: ${error.message}`);
@@ -26,7 +26,7 @@ async function testIntegrationUI() {
     
     // Test integrations endpoint (should require auth)
     try {
-      const integrationsResponse = await fetch('http://localhost:3001/api/integrations');
+      const integrationsResponse = await fetch('http://localhost:3000/api/integrations');
       console.log(`📋 Integrations API: ${integrationsResponse.status} (${integrationsResponse.status === 401 ? 'Auth required - Expected' : 'Response received'})`);
     } catch (error) {
       console.log(`❌ Integrations API: ${error.message}`);
@@ -34,7 +34,7 @@ async function testIntegrationUI() {
     
     // Test Shopify test endpoint (should require auth)
     try {
-      const shopifyTestResponse = await fetch('http://localhost:3001/api/integrations/shopify/test', {
+      const shopifyTestResponse = await fetch('http://localhost:3000/api/integrations/shopify/test', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -51,7 +51,7 @@ async function testIntegrationUI() {
     }
     
     console.log('\n🎯 UI Test Instructions:');
-    console.log('1. Open http://localhost:3001 in your browser');
+    console.log('1. Open http://localhost:3000 in your browser');
     console.log('2. Sign in with Google');
     console.log('3. Go to Dashboard → Integrations');
     console.log('4. Try adding a Shopify integration');

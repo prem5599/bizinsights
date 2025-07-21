@@ -5,7 +5,7 @@ async function triggerSync() {
   try {
     // First get organization info
     console.log('1. Getting organization...')
-    const orgResponse = await fetch('http://localhost:3001/api/organizations/current', {
+    const orgResponse = await fetch('http://localhost:3000/api/organizations/current', {
       credentials: 'include'
     })
     
@@ -23,7 +23,7 @@ async function triggerSync() {
 
     // Trigger sync
     console.log('\n2. Triggering data sync...')
-    const syncResponse = await fetch('http://localhost:3001/api/integrations/shopify/sync', {
+    const syncResponse = await fetch('http://localhost:3000/api/integrations/shopify/sync', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
