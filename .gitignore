@@ -52,3 +52,4 @@ test-*.ts
 CLAUDE.md
 claude-*
 .claude_history
+src/lib

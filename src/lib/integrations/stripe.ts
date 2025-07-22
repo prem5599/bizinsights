@@ -278,6 +278,53 @@ export class StripeIntegration {
   }
 
   /**
+   * Generate OAuth authorization URL for Stripe Connect
+   */
+  static generateConnectUrl(state: string): string {
+    const redirectUri = `${process.env.NEXTAUTH_URL || process.env.APP_URL}/api/integrations/stripe/oauth`
+    
+    const params = new URLSearchParams({
+      response_type: 'code',
+      client_id: process.env.STRIPE_CLIENT_ID!,
+      scope: 'read_write',
+      redirect_uri: redirectUri,
+      state
+    })
+
+    return `https://connect.stripe.com/oauth/authorize?${params.toString()}`
+  }
+
+  /**
+   * Exchange authorization code for access token
+   */
+  static async exchangeCodeForToken(code: string): Promise<{
+    access_token: string
+    refresh_token: string
+    stripe_publishable_key: string
+    stripe_user_id: string
+    scope: string
+  }> {
+    const response = await fetch('https://connect.stripe.com/oauth/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: new URLSearchParams({
+        client_secret: process.env.STRIPE_CLIENT_SECRET!,
+        code,
+        grant_type: 'authorization_code'
+      })
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(`Failed to exchange code for token: ${errorData.error_description || errorData.error}`)
+    }
+
+    return response.json()
+  }
+
+  /**
    * Create webhook endpoint
    */
   async createWebhook(url: string, events: string[]): Promise<any> {

@@ -2,12 +2,15 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 
-interface MetricData {
+interface MetricValue {
   current: number
   previous: number
   change: number
+  changePercent: number
   trend: 'up' | 'down' | 'neutral'
 }
+
+interface MetricData extends MetricValue {}
 
 interface DashboardData {
   metrics: {
@@ -105,36 +108,42 @@ export function useDashboardData(): UseDashboardDataReturn {
             current: dashboardData.metrics?.revenue?.current || 0,
             previous: dashboardData.metrics?.revenue?.previous || 0,
             change: dashboardData.metrics?.revenue?.change || 0,
+            changePercent: dashboardData.metrics?.revenue?.changePercent || 0,
             trend: dashboardData.metrics?.revenue?.trend || 'neutral'
           },
           orders: {
             current: dashboardData.metrics?.orders?.current || 0,
             previous: dashboardData.metrics?.orders?.previous || 0,
             change: dashboardData.metrics?.orders?.change || 0,
+            changePercent: dashboardData.metrics?.orders?.changePercent || 0,
             trend: dashboardData.metrics?.orders?.trend || 'neutral'
           },
           sessions: {
             current: dashboardData.metrics?.sessions?.current || 0,
             previous: dashboardData.metrics?.sessions?.previous || 0,
             change: dashboardData.metrics?.sessions?.change || 0,
+            changePercent: dashboardData.metrics?.sessions?.changePercent || 0,
             trend: dashboardData.metrics?.sessions?.trend || 'neutral'
           },
           customers: {
             current: dashboardData.metrics?.customers?.current || 0,
             previous: dashboardData.metrics?.customers?.previous || 0,
             change: dashboardData.metrics?.customers?.change || 0,
+            changePercent: dashboardData.metrics?.customers?.changePercent || 0,
             trend: dashboardData.metrics?.customers?.trend || 'neutral'
           },
           conversion: {
             current: dashboardData.metrics?.conversionRate?.current || 0,
             previous: dashboardData.metrics?.conversionRate?.previous || 0,
             change: dashboardData.metrics?.conversionRate?.change || 0,
+            changePercent: dashboardData.metrics?.conversionRate?.changePercent || 0,
             trend: dashboardData.metrics?.conversionRate?.trend || 'neutral'
           },
           aov: {
             current: dashboardData.metrics?.averageOrderValue?.current || 0,
             previous: dashboardData.metrics?.averageOrderValue?.previous || 0,
             change: dashboardData.metrics?.averageOrderValue?.change || 0,
+            changePercent: dashboardData.metrics?.averageOrderValue?.changePercent || 0,
             trend: dashboardData.metrics?.averageOrderValue?.trend || 'neutral'
           }
         },
@@ -162,12 +171,12 @@ export function useDashboardData(): UseDashboardDataReturn {
       // Set empty state on error for authenticated users
       setData({
         metrics: {
-          revenue: { current: 0, previous: 0, change: 0, trend: 'neutral' },
-          orders: { current: 0, previous: 0, change: 0, trend: 'neutral' },
-          sessions: { current: 0, previous: 0, change: 0, trend: 'neutral' },
-          customers: { current: 0, previous: 0, change: 0, trend: 'neutral' },
-          conversion: { current: 0, previous: 0, change: 0, trend: 'neutral' },
-          aov: { current: 0, previous: 0, change: 0, trend: 'neutral' }
+          revenue: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' },
+          orders: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' },
+          sessions: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' },
+          customers: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' },
+          conversion: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' },
+          aov: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' }
         },
         charts: {
           revenue_trend: [],
@@ -287,36 +296,42 @@ export function useDashboardDataNew(): UseDashboardDataReturn {
             current: dashboardData.metrics?.revenue?.current || 0,
             previous: dashboardData.metrics?.revenue?.previous || 0,
             change: dashboardData.metrics?.revenue?.change || 0,
+            changePercent: dashboardData.metrics?.revenue?.changePercent || 0,
             trend: dashboardData.metrics?.revenue?.trend || 'neutral'
           },
           orders: {
             current: dashboardData.metrics?.orders?.current || 0,
             previous: dashboardData.metrics?.orders?.previous || 0,
             change: dashboardData.metrics?.orders?.change || 0,
+            changePercent: dashboardData.metrics?.orders?.changePercent || 0,
             trend: dashboardData.metrics?.orders?.trend || 'neutral'
           },
           sessions: {
             current: dashboardData.metrics?.sessions?.current || 0,
             previous: dashboardData.metrics?.sessions?.previous || 0,
             change: dashboardData.metrics?.sessions?.change || 0,
+            changePercent: dashboardData.metrics?.sessions?.changePercent || 0,
             trend: dashboardData.metrics?.sessions?.trend || 'neutral'
           },
           customers: {
             current: dashboardData.metrics?.customers?.current || 0,
             previous: dashboardData.metrics?.customers?.previous || 0,
             change: dashboardData.metrics?.customers?.change || 0,
+            changePercent: dashboardData.metrics?.customers?.changePercent || 0,
             trend: dashboardData.metrics?.customers?.trend || 'neutral'
           },
           conversion: {
             current: dashboardData.metrics?.conversionRate?.current || 0,
             previous: dashboardData.metrics?.conversionRate?.previous || 0,
             change: dashboardData.metrics?.conversionRate?.change || 0,
+            changePercent: dashboardData.metrics?.conversionRate?.changePercent || 0,
             trend: dashboardData.metrics?.conversionRate?.trend || 'neutral'
           },
           aov: {
             current: dashboardData.metrics?.averageOrderValue?.current || 0,
             previous: dashboardData.metrics?.averageOrderValue?.previous || 0,
             change: dashboardData.metrics?.averageOrderValue?.change || 0,
+            changePercent: dashboardData.metrics?.averageOrderValue?.changePercent || 0,
             trend: dashboardData.metrics?.averageOrderValue?.trend || 'neutral'
           }
         },
@@ -344,12 +359,12 @@ export function useDashboardDataNew(): UseDashboardDataReturn {
       // Set empty state on error for authenticated users
       setData({
         metrics: {
-          revenue: { current: 0, previous: 0, change: 0, trend: 'neutral' },
-          orders: { current: 0, previous: 0, change: 0, trend: 'neutral' },
-          sessions: { current: 0, previous: 0, change: 0, trend: 'neutral' },
-          customers: { current: 0, previous: 0, change: 0, trend: 'neutral' },
-          conversion: { current: 0, previous: 0, change: 0, trend: 'neutral' },
-          aov: { current: 0, previous: 0, change: 0, trend: 'neutral' }
+          revenue: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' },
+          orders: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' },
+          sessions: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' },
+          customers: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' },
+          conversion: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' },
+          aov: { current: 0, previous: 0, change: 0, changePercent: 0, trend: 'neutral' }
         },
         charts: {
           revenue_trend: [],
