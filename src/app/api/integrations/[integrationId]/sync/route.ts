@@ -216,29 +216,33 @@ export async function POST(
         topic: 'manual_sync',
         status: 'received',
         externalId: `manual_${Date.now()}`,
-        metadata: {
+        metadata: JSON.stringify({
           syncType,
           triggeredBy: session.user.id,
           manual: true,
           force,
           userAgent: request.headers.get('user-agent'),
           ipAddress: getClientIP(request)
-        }
+        })
       }
     })
 
     console.log('📝 Sync event created:', syncEvent.id)
 
     // Update integration status
+    const existingMetadata = typeof integration.metadata === 'string' 
+      ? JSON.parse(integration.metadata) 
+      : integration.metadata || {}
+    
     await prisma.integration.update({
       where: { id: integrationId },
       data: {
         lastSyncAt: new Date(),
-        metadata: {
-          ...integration.metadata,
+        metadata: JSON.stringify({
+          ...existingMetadata,
           lastSyncTriggeredBy: session.user.id,
           lastSyncType: syncType
-        }
+        })
       }
     })
 
@@ -504,12 +508,12 @@ async function triggerSyncOperation(
       data: {
         status: 'processed',
         processedAt: new Date(),
-        metadata: {
+        metadata: JSON.stringify({
           ...result.metadata,
           processingTime,
           recordsProcessed: result.recordsProcessed,
           syncResult: result
-        }
+        })
       }
     })
 
@@ -537,10 +541,10 @@ async function triggerSyncOperation(
         status: 'failed',
         processedAt: new Date(),
         error: error instanceof Error ? error.message : 'Unknown error',
-        metadata: {
+        metadata: JSON.stringify({
           processingTime,
           errorType: error instanceof Error ? error.constructor.name : 'UnknownError'
-        }
+        })
       }
     })
 
