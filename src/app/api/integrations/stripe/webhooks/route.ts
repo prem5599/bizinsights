@@ -106,33 +106,92 @@ export async function POST(request: NextRequest) {
 
     console.log(`Processing Stripe webhook ${event.type} for integration ${integration.id}`)
 
-    // Handle the webhook event
-    const result = await handleStripeWebhook(integration.id, event)
-
-    if (!result.success) {
-      console.error(`Webhook processing failed:`, result.error)
-      return NextResponse.json(
-        { error: 'Webhook processing failed', details: result.error },
-        { status: 500 }
-      )
-    }
-
-    // Log successful webhook processing
-    console.log(`Stripe webhook ${event.type} processed successfully: ${result.processed} data points`)
-
-    // Update integration last activity
-    await prisma.integration.update({
-      where: { id: integration.id },
+    // Log webhook event to database
+    const webhookEvent = await prisma.webhookEvent.create({
       data: {
-        lastSyncAt: new Date(),
+        integrationId: integration.id,
+        topic: event.type,
+        status: 'received',
+        externalId: event.id,
         metadata: JSON.stringify({
-          ...((integration.metadata as any) || {}),
-          lastWebhookAt: new Date().toISOString(),
-          lastWebhookType: event.type,
-          lastWebhookProcessed: result.processed
+          eventType: event.type,
+          accountId: event.account,
+          livemode: event.livemode,
+          apiVersion: event.api_version,
+          requestId: event.request?.id,
+          objectId: event.data?.object?.id,
+          source: 'stripe_webhook'
         })
       }
     })
+
+    try {
+      // Handle the webhook event
+      const result = await handleStripeWebhook(integration.id, event)
+
+      if (!result.success) {
+        // Update webhook event status to failed
+        await prisma.webhookEvent.update({
+          where: { id: webhookEvent.id },
+          data: {
+            status: 'failed',
+            error: result.error,
+            processedAt: new Date()
+          }
+        })
+
+        console.error(`Webhook processing failed:`, result.error)
+        return NextResponse.json(
+          { error: 'Webhook processing failed', details: result.error },
+          { status: 500 }
+        )
+      }
+
+      // Update webhook event status to processed
+      await prisma.webhookEvent.update({
+        where: { id: webhookEvent.id },
+        data: {
+          status: 'processed',
+          processedAt: new Date(),
+          metadata: JSON.stringify({
+            ...JSON.parse(webhookEvent.metadata),
+            processed: result.processed,
+            processingDuration: Date.now() - webhookEvent.receivedAt.getTime()
+          })
+        }
+      })
+
+      // Log successful webhook processing
+      console.log(`Stripe webhook ${event.type} processed successfully: ${result.processed} data points`)
+
+      // Update integration last activity
+      await prisma.integration.update({
+        where: { id: integration.id },
+        data: {
+          lastSyncAt: new Date(),
+          metadata: JSON.stringify({
+            ...((integration.metadata as any) || {}),
+            lastWebhookAt: new Date().toISOString(),
+            lastWebhookType: event.type,
+            lastWebhookProcessed: result.processed,
+            totalWebhooksProcessed: ((integration.metadata as any)?.totalWebhooksProcessed || 0) + 1
+          })
+        }
+      })
+
+    } catch (processingError) {
+      // Update webhook event status to failed
+      await prisma.webhookEvent.update({
+        where: { id: webhookEvent.id },
+        data: {
+          status: 'failed',
+          error: processingError instanceof Error ? processingError.message : 'Unknown processing error',
+          processedAt: new Date()
+        }
+      })
+
+      throw processingError
+    }
 
     return NextResponse.json({
       success: true,

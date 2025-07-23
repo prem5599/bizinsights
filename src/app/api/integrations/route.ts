@@ -8,7 +8,7 @@ import { z } from 'zod'
 export const dynamic = 'force-dynamic'
 
 const createIntegrationSchema = z.object({
-  platform: z.enum(['shopify', 'stripe', 'google_analytics', 'facebook_ads', 'mailchimp']),
+  platform: z.enum(['shopify', 'stripe', 'woocommerce', 'google_analytics', 'facebook_ads', 'mailchimp']),
   organizationId: z.string().cuid(),
   platformAccountId: z.string().optional(),
   accessToken: z.string().optional(),
@@ -265,6 +265,7 @@ function getPlatformDisplayName(platform: string): string {
   const displayNames: Record<string, string> = {
     shopify: 'Shopify',
     stripe: 'Stripe',
+    woocommerce: 'WooCommerce',
     google_analytics: 'Google Analytics',
     facebook_ads: 'Facebook Ads',
     mailchimp: 'Mailchimp',

@@ -1,8 +1,8 @@
 // src/components/integrations/StripeConnect.tsx
 'use client'
 
-import { useState } from 'react'
-import { X, Loader2, CreditCard, Check, ExternalLink } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { X, Loader2, CreditCard, Check, ExternalLink, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface StripeConnectProps {
@@ -23,14 +23,15 @@ export function StripeConnect({ isOpen, onClose, onSuccess, organizationId }: St
     setStep('connecting')
 
     try {
-      // Initiate Stripe OAuth flow
-      const response = await fetch('/api/integrations/stripe/oauth', {
+      // Initiate Stripe Connect OAuth flow
+      const response = await fetch('/api/integrations/stripe/connect', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          organizationId
+          organizationId,
+          returnUrl: window.location.href
         })
       })
 
@@ -40,7 +41,7 @@ export function StripeConnect({ isOpen, onClose, onSuccess, organizationId }: St
         throw new Error(data.error || 'Failed to initiate Stripe connection')
       }
 
-      // Redirect to Stripe OAuth
+      // Redirect to Stripe Connect OAuth
       window.location.href = data.authUrl
 
     } catch (error) {
@@ -218,13 +219,14 @@ export function SimpleStripeConnect({
     setError(null)
 
     try {
-      const response = await fetch('/api/integrations/stripe/oauth', {
+      const response = await fetch('/api/integrations/stripe/connect', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          organizationId
+          organizationId,
+          returnUrl: window.location.href
         })
       })
 
@@ -234,7 +236,7 @@ export function SimpleStripeConnect({
         throw new Error(data.error || 'Failed to initiate Stripe connection')
       }
 
-      // Redirect to Stripe OAuth
+      // Redirect to Stripe Connect OAuth
       window.location.href = data.authUrl
 
     } catch (error) {
@@ -272,6 +274,109 @@ export function SimpleStripeConnect({
 
       <div className="text-xs text-gray-500 text-center">
         Secure connection via Stripe Connect
+      </div>
+    </div>
+  )
+}
+
+// Component to show Stripe connection status
+export function StripeConnectionStatus({ 
+  organizationId, 
+  className 
+}: {
+  organizationId: string
+  className?: string
+}) {
+  const [integration, setIntegration] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const checkConnectionStatus = async () => {
+      try {
+        const response = await fetch(`/api/integrations/stripe/connect?organizationId=${organizationId}`)
+        const data = await response.json()
+
+        if (response.ok) {
+          setIntegration(data.integration)
+        } else {
+          setError(data.error || 'Failed to check connection status')
+        }
+      } catch (error) {
+        console.error('Error checking Stripe connection:', error)
+        setError('Failed to check connection status')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    checkConnectionStatus()
+  }, [organizationId])
+
+  if (loading) {
+    return (
+      <div className={cn("flex items-center justify-center p-4", className)}>
+        <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
+        <span className="ml-2 text-sm text-gray-600">Checking connection...</span>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className={cn("flex items-center p-4 bg-red-50 border border-red-200 rounded-lg", className)}>
+        <AlertCircle className="h-5 w-5 text-red-500" />
+        <span className="ml-2 text-sm text-red-700">{error}</span>
+      </div>
+    )
+  }
+
+  if (!integration || !integration.connected) {
+    return (
+      <div className={cn("flex items-center p-4 bg-yellow-50 border border-yellow-200 rounded-lg", className)}>
+        <AlertCircle className="h-5 w-5 text-yellow-500" />
+        <span className="ml-2 text-sm text-yellow-700">Stripe not connected</span>
+      </div>
+    )
+  }
+
+  const metadata = integration.metadata || {}
+  
+  return (
+    <div className={cn("p-4 bg-green-50 border border-green-200 rounded-lg", className)}>
+      <div className="flex items-start justify-between">
+        <div className="flex items-center">
+          <div className="flex items-center justify-center w-8 h-8 bg-green-100 rounded-full">
+            <CheckCircle2 className="h-5 w-5 text-green-600" />
+          </div>
+          <div className="ml-3">
+            <h3 className="text-sm font-medium text-green-900">
+              Stripe Connected
+            </h3>
+            <div className="mt-1 space-y-1">
+              {metadata.stripeAccountId && (
+                <p className="text-xs text-green-700">
+                  Account: {metadata.stripeAccountId}
+                </p>
+              )}
+              {integration.lastSyncAt && (
+                <p className="text-xs text-green-700">
+                  Last sync: {new Date(integration.lastSyncAt).toLocaleDateString()}
+                </p>
+              )}
+              {integration.dataPointsCount > 0 && (
+                <p className="text-xs text-green-700">
+                  {integration.dataPointsCount.toLocaleString()} data points synced
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center">
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+            Active
+          </span>
+        </div>
       </div>
     </div>
   )

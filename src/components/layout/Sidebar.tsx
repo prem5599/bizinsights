@@ -20,12 +20,12 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-const navigation = [
+const getNavigation = (pathname: string) => [
   { name: 'Dashboard', href: '/dashboard', icon: Home },
   { name: 'Analytics', href: '/dashboard/analytics', icon: BarChart3 },
   { name: 'Insights', href: '/dashboard/insights', icon: Lightbulb },
   { name: 'Reports', href: '/dashboard/reports', icon: FileText },
-  { name: 'Integrations', href: '/dashboard/integrations', icon: PlusCircle },
+  { name: 'Integrations', href: `/${pathname.split('/')[1]}/integrations`, icon: PlusCircle },
   { name: 'Team', href: '/dashboard/team', icon: Users },
   { name: 'Settings', href: '/dashboard/settings', icon: Settings },
 ]
@@ -37,6 +37,7 @@ interface SidebarProps {
 export function Sidebar({ onClose }: SidebarProps) {
   const pathname = usePathname()
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false)
+  const navigation = getNavigation(pathname)
 
   // Sample organization data - in real app, this would come from context/props
   const currentOrg = {

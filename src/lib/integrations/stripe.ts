@@ -1,5 +1,6 @@
 // src/lib/integrations/stripe.ts
 import { prisma } from '@/lib/prisma'
+import crypto from 'crypto'
 
 /**
  * Stripe API Types
@@ -81,6 +82,19 @@ export class StripeIntegration {
   }
 
   /**
+   * Enhanced constructor for Stripe Connect accounts
+   */
+  static forConnectAccount(accessToken: string, stripeAccount?: string): StripeIntegration {
+    const instance = new StripeIntegration(accessToken)
+    if (stripeAccount) {
+      instance.stripeAccount = stripeAccount
+    }
+    return instance
+  }
+
+  private stripeAccount?: string
+
+  /**
    * Make authenticated API request to Stripe with retry logic
    */
   private async makeRequest(
@@ -98,6 +112,7 @@ export class StripeIntegration {
             'Authorization': `Bearer ${this.accessToken}`,
             'Stripe-Version': this.apiVersion,
             'Content-Type': 'application/x-www-form-urlencoded',
+            ...(this.stripeAccount && { 'Stripe-Account': this.stripeAccount }),
             ...options.headers
           }
         })
@@ -281,17 +296,55 @@ export class StripeIntegration {
    * Generate OAuth authorization URL for Stripe Connect
    */
   static generateConnectUrl(state: string): string {
-    const redirectUri = `${process.env.NEXTAUTH_URL || process.env.APP_URL}/api/integrations/stripe/oauth`
+    const redirectUri = `${process.env.NEXTAUTH_URL || process.env.APP_URL}/api/integrations/stripe/callback`
     
     const params = new URLSearchParams({
       response_type: 'code',
-      client_id: process.env.STRIPE_CLIENT_ID!,
+      client_id: process.env.STRIPE_CONNECT_CLIENT_ID!,
       scope: 'read_write',
       redirect_uri: redirectUri,
-      state
+      state,
+      'stripe_user[business_type]': 'company',
+      'stripe_user[country]': 'US'
     })
 
     return `https://connect.stripe.com/oauth/authorize?${params.toString()}`
+  }
+
+  /**
+   * Get Connect account information
+   */
+  async getConnectAccount(accountId?: string): Promise<any> {
+    const endpoint = accountId ? `accounts/${accountId}` : 'account'
+    return this.makeRequest(endpoint)
+  }
+
+  /**
+   * Verify webhook signature for Connect accounts
+   */
+  static verifyConnectWebhookSignature(payload: string, signature: string, secret: string): boolean {
+    try {
+      const expectedSignature = crypto
+        .createHmac('sha256', secret)
+        .update(payload, 'utf8')
+        .digest('hex')
+
+      const providedSignature = signature.split(',').find(sig => 
+        sig.trim().startsWith('v1=')
+      )?.replace('v1=', '')
+
+      if (!providedSignature) {
+        return false
+      }
+
+      return crypto.timingSafeEqual(
+        Buffer.from(expectedSignature, 'hex'),
+        Buffer.from(providedSignature, 'hex')
+      )
+    } catch (error) {
+      console.error('Webhook signature verification error:', error)
+      return false
+    }
   }
 
   /**
@@ -310,7 +363,7 @@ export class StripeIntegration {
         'Content-Type': 'application/x-www-form-urlencoded'
       },
       body: new URLSearchParams({
-        client_secret: process.env.STRIPE_CLIENT_SECRET!,
+        client_secret: process.env.STRIPE_SECRET_KEY!,
         code,
         grant_type: 'authorization_code'
       })
@@ -341,33 +394,89 @@ export class StripeIntegration {
   /**
    * Setup required webhooks for integration
    */
-  async setupWebhooks(organizationId: string): Promise<string[]> {
+  async setupWebhooks(organizationId: string, options: {
+    recreate?: boolean
+  } = {}): Promise<string[]> {
     const webhookEvents = [
       'payment_intent.succeeded',
       'payment_intent.payment_failed',
+      'payment_intent.created',
       'charge.succeeded',
       'charge.failed',
       'charge.dispute.created',
+      'charge.refunded',
       'customer.created',
       'customer.updated',
+      'customer.deleted',
       'customer.subscription.created',
       'customer.subscription.updated',
       'customer.subscription.deleted',
       'invoice.paid',
       'invoice.payment_failed',
-      'checkout.session.completed'
+      'invoice.created',
+      'checkout.session.completed',
+      'payout.created',
+      'payout.paid',
+      'payout.failed'
     ]
 
     const baseUrl = process.env.NEXTAUTH_URL || process.env.APP_URL || 'http://localhost:3000'
-    const webhookUrl = `${baseUrl}/api/webhooks/stripe?org=${organizationId}`
+    const webhookUrl = `${baseUrl}/api/integrations/stripe/webhooks?org=${organizationId}`
+    const webhookUrls: string[] = []
 
     try {
+      // Clean up existing webhooks if recreate is requested
+      if (options.recreate) {
+        const existingWebhooks = await this.getExistingWebhooks()
+        
+        for (const webhook of existingWebhooks) {
+          try {
+            await this.deleteWebhook(webhook.id)
+            console.log(`Deleted existing Stripe webhook: ${webhook.id}`)
+          } catch (error) {
+            console.warn(`Failed to delete webhook ${webhook.id}:`, error)
+          }
+        }
+      }
+
       const webhook = await this.createWebhook(webhookUrl, webhookEvents)
       console.log(`Created Stripe webhook: ${webhook.id}`)
-      return [webhook.url]
+      webhookUrls.push(webhook.url)
+      
+      return webhookUrls
     } catch (error) {
       console.error('Failed to create Stripe webhook:', error)
       return []
+    }
+  }
+
+  /**
+   * Get existing webhooks
+   */
+  async getExistingWebhooks(): Promise<any[]> {
+    try {
+      const response = await this.makeRequest('webhook_endpoints')
+      return response.data || []
+    } catch (error) {
+      console.error('Failed to get existing webhooks:', error)
+      return []
+    }
+  }
+
+  /**
+   * Delete webhook endpoint
+   */
+  async deleteWebhook(webhookId: string): Promise<void> {
+    try {
+      await this.makeRequest(`webhook_endpoints/${webhookId}`, {
+        method: 'DELETE'
+      })
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('404')) {
+        console.log(`Webhook ${webhookId} not found, may already be deleted`)
+        return
+      }
+      throw error
     }
   }
 

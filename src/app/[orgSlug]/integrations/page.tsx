@@ -17,6 +17,7 @@ import {
   ExternalLink,
   Zap,
   ShoppingBag,
+  ShoppingCart,
   CreditCard,
   BarChart3,
   Users,
@@ -32,6 +33,8 @@ import {
   TrendingUp
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { StripeConnect } from '@/components/integrations/StripeConnect'
+import { WooCommerceConnect } from '@/components/integrations/WooCommerceConnect'
 
 interface Integration {
   id: string
@@ -92,6 +95,17 @@ const AVAILABLE_INTEGRATIONS: AvailableIntegration[] = [
     icon: <CreditCard className="h-6 w-6" />,
     category: 'payments',
     features: ['Payment tracking', 'Subscription metrics', 'Chargeback monitoring', 'Revenue analytics'],
+    isPopular: true,
+    setupTime: '3 minutes'
+  },
+  {
+    id: 'woocommerce',
+    name: 'WooCommerce',
+    description: 'Connect your WordPress WooCommerce store to track orders, products, and customers',
+    platform: 'woocommerce',
+    icon: <ShoppingCart className="h-6 w-6" />,
+    category: 'ecommerce',
+    features: ['Order tracking', 'Product management', 'Customer analytics', 'Coupon performance'],
     isPopular: true,
     setupTime: '3 minutes'
   },
@@ -166,6 +180,7 @@ function getPlatformIcon(platform: string): React.ReactNode {
   switch (platform) {
     case 'shopify': return <ShoppingBag className="h-5 w-5" />
     case 'stripe': return <CreditCard className="h-5 w-5" />
+    case 'woocommerce': return <ShoppingCart className="h-5 w-5" />
     case 'google_analytics': return <BarChart3 className="h-5 w-5" />
     case 'mailchimp': return <Mail className="h-5 w-5" />
     case 'facebook_ads': return <MessageSquare className="h-5 w-5" />
@@ -178,6 +193,7 @@ function getPlatformName(platform: string): string {
   const names: Record<string, string> = {
     shopify: 'Shopify',
     stripe: 'Stripe',
+    woocommerce: 'WooCommerce',
     google_analytics: 'Google Analytics',
     mailchimp: 'Mailchimp',
     facebook_ads: 'Facebook Ads',
@@ -211,11 +227,14 @@ export default function IntegrationsPage() {
   const [error, setError] = useState<string | null>(null)
   const [connecting, setConnecting] = useState<string | null>(null)
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
+  const [showStripeConnect, setShowStripeConnect] = useState(false)
+  const [showWooCommerceConnect, setShowWooCommerceConnect] = useState(false)
+  const [organizationId, setOrganizationId] = useState<string>('')
 
   const orgSlug = params.orgSlug as string
 
   useEffect(() => {
-    fetchIntegrations()
+    fetchOrganizationId()
     
     // Check for success/error messages from OAuth callbacks
     const success = searchParams.get('success')
@@ -232,12 +251,33 @@ export default function IntegrationsPage() {
     }
   }, [searchParams])
 
-  const fetchIntegrations = async () => {
+  const fetchOrganizationId = async () => {
+    try {
+      // Get organization details to get the ID
+      const response = await fetch(`/api/organizations/by-slug/${orgSlug}`)
+      if (response.ok) {
+        const data = await response.json()
+        setOrganizationId(data.organization.id)
+        // Now fetch integrations with the org ID
+        fetchIntegrations(data.organization.id)
+      } else {
+        setError('Failed to load organization')
+      }
+    } catch (err) {
+      console.error('Failed to fetch organization:', err)
+      setError('Failed to load organization')
+    }
+  }
+
+  const fetchIntegrations = async (orgId?: string) => {
+    const targetOrgId = orgId || organizationId
+    if (!targetOrgId) return
+    
     try {
       setLoading(true)
       setError(null)
       
-      const response = await fetch('/api/integrations', {
+      const response = await fetch(`/api/integrations?orgId=${targetOrgId}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -260,11 +300,19 @@ export default function IntegrationsPage() {
   }
 
   const handleConnect = async (platform: string) => {
-    if (platform === 'shopify') {
-      handleShopifyConnect()
-    } else {
-      // Handle other platforms or show coming soon message
-      console.log(`Connecting to ${platform} - coming soon!`)
+    switch (platform) {
+      case 'shopify':
+        handleShopifyConnect()
+        break
+      case 'stripe':
+        setShowStripeConnect(true)
+        break
+      case 'woocommerce':
+        setShowWooCommerceConnect(true)
+        break
+      default:
+        // Handle other platforms or show coming soon message
+        console.log(`Connecting to ${platform} - coming soon!`)
     }
   }
 
@@ -281,7 +329,7 @@ export default function IntegrationsPage() {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        organizationId: orgSlug, // Assuming orgSlug is the organization ID
+        organizationId: organizationId,
         shopName: shopName.trim(),
         returnUrl: window.location.href
       })
@@ -634,6 +682,32 @@ export default function IntegrationsPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Stripe Connect Modal */}
+      {showStripeConnect && organizationId && (
+        <StripeConnect
+          isOpen={showStripeConnect}
+          onClose={() => setShowStripeConnect(false)}
+          onSuccess={(integration) => {
+            setShowStripeConnect(false)
+            fetchIntegrations() // Refresh the integrations list
+          }}
+          organizationId={organizationId}
+        />
+      )}
+
+      {/* WooCommerce Connect Modal */}
+      {showWooCommerceConnect && organizationId && (
+        <WooCommerceConnect
+          isOpen={showWooCommerceConnect}
+          onClose={() => setShowWooCommerceConnect(false)}
+          onSuccess={(integration) => {
+            setShowWooCommerceConnect(false)
+            fetchIntegrations() // Refresh the integrations list
+          }}
+          organizationId={organizationId}
+        />
+      )}
     </DashboardLayout>
   )
 }
