@@ -101,12 +101,13 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess, organizationId
         throw new Error(data.error || 'Failed to generate OAuth URL')
       }
 
-      // If we get a success response, call onSuccess
-      if (data.success) {
-        setStep('success')
-        onSuccess(data.integration)
+      // OAuth endpoint returns a redirectUrl for Shopify authorization
+      if (data.success && data.redirectUrl) {
+        // Redirect to Shopify OAuth authorization page
+        window.location.href = data.redirectUrl
+        return
       } else {
-        throw new Error(data.error || 'OAuth flow failed')
+        throw new Error(data.error || 'Failed to get OAuth redirect URL')
       }
 
     } catch (error) {
@@ -403,7 +404,7 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess, organizationId
                   <ol className="list-decimal list-inside space-y-1">
                     <li>Go to your Shopify admin → Apps → &quot;App and sales channel settings&quot;</li>
                     <li>Click &quot;Develop apps&quot; → &quot;Create an app&quot;</li>
-                    <li>Configure API scopes: read_orders, read_products, read_customers</li>
+                    <li>Configure API scopes: read_orders, read_customers, read_products, read_analytics, read_reports, read_inventory, read_fulfillments, read_checkouts</li>
                     <li>Install the app and copy the access token</li>
                   </ol>
                   <a
@@ -461,12 +462,12 @@ export function ShopifyOAuthConnect({ isOpen, onClose, onSuccess, organizationId
             <div className="text-center py-8">
               <Loader2 className="h-8 w-8 text-blue-600 animate-spin mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">
-                {authMethod === 'oauth' ? 'Redirecting to Shopify...' : 
+                {authMethod === 'oauth' ? 'Preparing OAuth Authorization...' : 
                  authMethod === 'demo' ? 'Creating demo store...' : 'Connecting to your store...'}
               </h3>
               <p className="text-gray-600">
                 {authMethod === 'oauth' 
-                  ? 'You will be redirected to Shopify to authorize the connection.'
+                  ? 'Please wait while we prepare your Shopify authorization. You will be redirected shortly.'
                   : authMethod === 'demo'
                   ? 'Setting up demo store with sample data...'
                   : 'Please wait while we verify your store connection.'
