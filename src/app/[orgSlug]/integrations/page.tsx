@@ -30,7 +30,10 @@ import {
   Calendar,
   FileText,
   DollarSign,
-  TrendingUp
+  TrendingUp,
+  Check,
+  Star,
+  Filter
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { StripeConnect } from '@/components/integrations/StripeConnect'
@@ -126,102 +129,36 @@ const AVAILABLE_INTEGRATIONS: AvailableIntegration[] = [
     platform: 'mailchimp',
     icon: <Mail className="h-6 w-6" />,
     category: 'marketing',
-    features: ['Email metrics', 'Subscriber growth', 'Campaign performance', 'Automation tracking'],
+    features: ['Email campaigns', 'Subscriber growth', 'Open rates', 'Click tracking'],
     isComingSoon: true,
     setupTime: '4 minutes'
   },
   {
     id: 'facebook_ads',
     name: 'Facebook Ads',
-    description: 'Track ad performance, ROAS, and social media marketing metrics',
+    description: 'Track ad performance, costs, and ROI from your Facebook advertising',
     platform: 'facebook_ads',
-    icon: <MessageSquare className="h-6 w-6" />,
+    icon: <Globe className="h-6 w-6" />,
     category: 'marketing',
-    features: ['Ad performance', 'ROAS tracking', 'Audience insights', 'Campaign optimization'],
+    features: ['Ad performance', 'Cost tracking', 'ROI analysis', 'Audience insights'],
     isComingSoon: true,
-    setupTime: '6 minutes'
-  },
-  {
-    id: 'quickbooks',
-    name: 'QuickBooks',
-    description: 'Sync financial data, expenses, and accounting metrics',
-    platform: 'quickbooks',
-    icon: <FileText className="h-6 w-6" />,
-    category: 'productivity',
-    features: ['Financial tracking', 'Expense monitoring', 'P&L insights', 'Cash flow analysis'],
-    isComingSoon: true,
-    setupTime: '8 minutes'
+    setupTime: '4 minutes'
   }
 ]
 
-function getStatusColor(status: string): string {
-  switch (status) {
-    case 'active': return 'text-green-600 bg-green-50 border-green-200'
-    case 'pending': return 'text-yellow-600 bg-yellow-50 border-yellow-200'
-    case 'syncing': return 'text-blue-600 bg-blue-50 border-blue-200'
-    case 'error': return 'text-red-600 bg-red-50 border-red-200'
-    case 'inactive': return 'text-gray-600 bg-gray-50 border-gray-200'
-    default: return 'text-gray-600 bg-gray-50 border-gray-200'
-  }
-}
-
-function getStatusIcon(status: string): React.ReactNode {
-  switch (status) {
-    case 'active': return <CheckCircle className="h-4 w-4" />
-    case 'pending': return <Clock className="h-4 w-4" />
-    case 'syncing': return <RefreshCw className="h-4 w-4 animate-spin" />
-    case 'error': return <AlertCircle className="h-4 w-4" />
-    case 'inactive': return <AlertCircle className="h-4 w-4" />
-    default: return <Clock className="h-4 w-4" />
-  }
-}
-
-function getPlatformIcon(platform: string): React.ReactNode {
-  switch (platform) {
-    case 'shopify': return <ShoppingBag className="h-5 w-5" />
-    case 'stripe': return <CreditCard className="h-5 w-5" />
-    case 'woocommerce': return <ShoppingCart className="h-5 w-5" />
-    case 'google_analytics': return <BarChart3 className="h-5 w-5" />
-    case 'mailchimp': return <Mail className="h-5 w-5" />
-    case 'facebook_ads': return <MessageSquare className="h-5 w-5" />
-    case 'quickbooks': return <FileText className="h-5 w-5" />
-    default: return <Database className="h-5 w-5" />
-  }
-}
-
-function getPlatformName(platform: string): string {
-  const names: Record<string, string> = {
-    shopify: 'Shopify',
-    stripe: 'Stripe',
-    woocommerce: 'WooCommerce',
-    google_analytics: 'Google Analytics',
-    mailchimp: 'Mailchimp',
-    facebook_ads: 'Facebook Ads',
-    quickbooks: 'QuickBooks'
-  }
-  return names[platform] || platform
-}
-
-function formatLastSync(lastSyncAt: string | null): string {
-  if (!lastSyncAt) return 'Never'
-  
-  const now = new Date()
-  const sync = new Date(lastSyncAt)
-  const diffMs = now.getTime() - sync.getTime()
-  const diffMins = Math.floor(diffMs / (1000 * 60))
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-  
-  if (diffMins < 1) return 'Just now'
-  if (diffMins < 60) return `${diffMins}m ago`
-  if (diffHours < 24) return `${diffHours}h ago`
-  return `${diffDays}d ago`
-}
+const CATEGORIES = [
+  { id: 'all', name: 'All Integrations', count: AVAILABLE_INTEGRATIONS.length },
+  { id: 'ecommerce', name: 'E-commerce', count: AVAILABLE_INTEGRATIONS.filter(i => i.category === 'ecommerce').length },
+  { id: 'payments', name: 'Payments', count: AVAILABLE_INTEGRATIONS.filter(i => i.category === 'payments').length },
+  { id: 'analytics', name: 'Analytics', count: AVAILABLE_INTEGRATIONS.filter(i => i.category === 'analytics').length },
+  { id: 'marketing', name: 'Marketing', count: AVAILABLE_INTEGRATIONS.filter(i => i.category === 'marketing').length },
+]
 
 export default function IntegrationsPage() {
   const { data: session } = useSession()
   const params = useParams()
   const searchParams = useSearchParams()
+  
   const [integrations, setIntegrations] = useState<Integration[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -242,23 +179,18 @@ export default function IntegrationsPage() {
     const shop = searchParams.get('shop')
     
     if (success === 'shopify_connected' && shop) {
-      // Show success notification
       console.log(`Successfully connected to Shopify store: ${shop}`)
-      // You could add a toast notification here
     } else if (errorParam) {
       console.error('Integration connection error:', errorParam)
-      // You could add an error toast notification here
     }
   }, [searchParams])
 
   const fetchOrganizationId = async () => {
     try {
-      // Get organization details to get the ID
       const response = await fetch(`/api/organizations/by-slug/${orgSlug}`)
       if (response.ok) {
         const data = await response.json()
         setOrganizationId(data.organization.id)
-        // Now fetch integrations with the org ID
         fetchIntegrations(data.organization.id)
       } else {
         setError('Failed to load organization')
@@ -293,65 +225,14 @@ export default function IntegrationsPage() {
       
     } catch (err) {
       console.error('Failed to fetch integrations:', err)
-      setError(err instanceof Error ? err.message : 'Failed to load integrations')
+      setError(err instanceof Error ? err.message : 'Failed to fetch integrations')
     } finally {
       setLoading(false)
     }
   }
 
-  const handleConnect = async (platform: string) => {
-    switch (platform) {
-      case 'shopify':
-        handleShopifyConnect()
-        break
-      case 'stripe':
-        setShowStripeConnect(true)
-        break
-      case 'woocommerce':
-        setShowWooCommerceConnect(true)
-        break
-      default:
-        // Handle other platforms or show coming soon message
-        console.log(`Connecting to ${platform} - coming soon!`)
-    }
-  }
-
-  const handleShopifyConnect = () => {
-    const shopName = prompt('Enter your Shopify store name (without .myshopify.com):')
-    if (!shopName) return
-
-    setConnecting('shopify')
-
-    // Call the Shopify connect API
-    fetch('/api/integrations/shopify/connect', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        organizationId: organizationId,
-        shopName: shopName.trim(),
-        returnUrl: window.location.href
-      })
-    })
-    .then(response => response.json())
-    .then(data => {
-      if (data.success && data.authUrl) {
-        // Redirect to Shopify OAuth
-        window.location.href = data.authUrl
-      } else {
-        throw new Error(data.error || 'Failed to initiate connection')
-      }
-    })
-    .catch(error => {
-      console.error('Shopify connection error:', error)
-      setError(error.message)
-      setConnecting(null)
-    })
-  }
-
-  const handleDisconnect = async (integrationId: string, platform: string) => {
-    if (!confirm(`Are you sure you want to disconnect ${getPlatformName(platform)}? This will stop data syncing.`)) {
+  const handleDeleteIntegration = async (integrationId: string) => {
+    if (!confirm('Are you sure you want to delete this integration? This action cannot be undone.')) {
       return
     }
 
@@ -361,60 +242,97 @@ export default function IntegrationsPage() {
       })
 
       if (!response.ok) {
-        throw new Error('Failed to disconnect integration')
+        throw new Error('Failed to delete integration')
       }
 
-      // Refresh integrations list
-      fetchIntegrations()
-      
+      setIntegrations(prev => prev.filter(integration => integration.id !== integrationId))
     } catch (err) {
-      console.error('Failed to disconnect integration:', err)
-      setError(err instanceof Error ? err.message : 'Failed to disconnect integration')
+      console.error('Failed to delete integration:', err)
+      setError(err instanceof Error ? err.message : 'Failed to delete integration')
     }
   }
 
-  const handleRefreshSync = async (integrationId: string) => {
+  const handleSyncIntegration = async (integrationId: string) => {
     try {
       const response = await fetch(`/api/integrations/${integrationId}/sync`, {
         method: 'POST',
       })
 
       if (!response.ok) {
-        throw new Error('Failed to trigger sync')
+        throw new Error('Failed to sync integration')
       }
 
       // Refresh integrations list
       fetchIntegrations()
-      
     } catch (err) {
-      console.error('Failed to trigger sync:', err)
-      setError(err instanceof Error ? err.message : 'Failed to trigger sync')
+      console.error('Failed to sync integration:', err)
+      setError(err instanceof Error ? err.message : 'Failed to sync integration')
     }
   }
 
-  const connectedPlatforms = new Set(integrations.map(i => i.platform))
-  const availableIntegrations = AVAILABLE_INTEGRATIONS.filter(integration => 
-    selectedCategory === 'all' || integration.category === selectedCategory
-  )
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'active': return 'text-green-700 bg-green-100'
+      case 'inactive': return 'text-gray-700 bg-gray-100'
+      case 'error': return 'text-red-700 bg-red-100'
+      case 'syncing': return 'text-blue-700 bg-blue-100'
+      case 'pending': return 'text-yellow-700 bg-yellow-100'
+      default: return 'text-gray-700 bg-gray-100'
+    }
+  }
 
-  const categories = [
-    { id: 'all', name: 'All', icon: <Globe className="h-4 w-4" /> },
-    { id: 'ecommerce', name: 'E-commerce', icon: <ShoppingBag className="h-4 w-4" /> },
-    { id: 'payments', name: 'Payments', icon: <CreditCard className="h-4 w-4" /> },
-    { id: 'analytics', name: 'Analytics', icon: <BarChart3 className="h-4 w-4" /> },
-    { id: 'marketing', name: 'Marketing', icon: <TrendingUp className="h-4 w-4" /> },
-    { id: 'productivity', name: 'Productivity', icon: <FileText className="h-4 w-4" /> }
-  ]
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'active': return <CheckCircle className="h-4 w-4" />
+      case 'error': return <AlertCircle className="h-4 w-4" />
+      case 'syncing': return <RefreshCw className="h-4 w-4 animate-spin" />
+      case 'pending': return <Clock className="h-4 w-4" />
+      default: return <AlertCircle className="h-4 w-4" />
+    }
+  }
 
-  if (loading) {
+  const handleIntegrationClick = (integration: AvailableIntegration) => {
+    if (integration.isComingSoon) {
+      return
+    }
+
+    switch (integration.platform) {
+      case 'stripe':
+        setShowStripeConnect(true)
+        break
+      case 'woocommerce':
+        setShowWooCommerceConnect(true)
+        break
+      case 'shopify':
+        // Handle Shopify connection - you can implement this
+        console.log('Shopify integration clicked')
+        break
+      default:
+        console.log(`${integration.name} integration clicked`)
+    }
+  }
+
+  const isIntegrationConnected = (platform: string) => {
+    return integrations.some(integration => 
+      integration.platform === platform && integration.status === 'active'
+    )
+  }
+
+  const filteredIntegrations = selectedCategory === 'all' 
+    ? AVAILABLE_INTEGRATIONS 
+    : AVAILABLE_INTEGRATIONS.filter(integration => integration.category === selectedCategory)
+
+  if (loading && integrations.length === 0) {
     return (
       <DashboardLayout>
-        <div className="space-y-6">
-          <div className="h-8 bg-gray-200 rounded w-64 animate-pulse"></div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className="h-48 bg-gray-200 rounded animate-pulse"></div>
-            ))}
+        <div className="p-6">
+          <div className="animate-pulse space-y-6">
+            <div className="h-8 bg-gray-200 rounded w-1/3"></div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="h-48 bg-gray-200 rounded-lg"></div>
+              ))}
+            </div>
           </div>
         </div>
       </DashboardLayout>
@@ -423,244 +341,243 @@ export default function IntegrationsPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
+      <div className="p-6 space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Integrations</h1>
-          <p className="text-gray-600 mt-1">
-            Connect your business tools to get unified insights and automated reporting
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Integrations</h1>
+            <p className="text-gray-600 mt-1">
+              Connect your business tools to get unified insights and analytics
+            </p>
+          </div>
         </div>
 
-        {/* Error Display */}
+        {/* Error Message */}
         {error && (
-          <div className="rounded-lg bg-red-50 border border-red-200 p-4">
-            <div className="flex">
-              <AlertCircle className="h-5 w-5 text-red-400" />
-              <div className="ml-3">
-                <h3 className="text-sm font-medium text-red-800">Error</h3>
-                <div className="mt-2 text-sm text-red-700">
-                  <p>{error}</p>
-                </div>
-                <div className="mt-4">
-                  <button
-                    onClick={() => setError(null)}
-                    className="rounded-md bg-red-100 px-3 py-2 text-sm font-medium text-red-800 hover:bg-red-200"
-                  >
-                    Dismiss
-                  </button>
-                </div>
-              </div>
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <div className="flex items-center">
+              <AlertCircle className="h-5 w-5 text-red-500 mr-2" />
+              <span className="text-red-700">{error}</span>
             </div>
           </div>
         )}
 
         {/* Connected Integrations */}
         {integrations.length > 0 && (
-          <div className="space-y-4">
-            <h2 className="text-xl font-semibold text-gray-900">Connected Integrations</h2>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {integrations.map((integration) => (
-                <Card key={integration.id} className="hover:shadow-md transition-shadow">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div className="p-2 bg-blue-50 rounded-lg">
-                          {getPlatformIcon(integration.platform)}
-                        </div>
-                        <div>
-                          <CardTitle className="text-lg">
-                            {getPlatformName(integration.platform)}
-                          </CardTitle>
-                          {integration.platformAccountId && (
-                            <CardDescription className="text-sm">
-                              {integration.metadata?.shopInfo?.name || integration.platformAccountId}
-                            </CardDescription>
-                          )}
-                        </div>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center space-x-2">
+                <CheckCircle className="h-5 w-5 text-green-600" />
+                <span>Connected Integrations</span>
+              </CardTitle>
+              <CardDescription>
+                Your active integrations and their current status
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {integrations.map((integration) => (
+                  <div
+                    key={integration.id}
+                    className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <Database className="h-5 w-5 text-blue-600" />
                       </div>
-                      <div className={cn(
-                        "inline-flex items-center space-x-1 rounded-full px-2 py-1 text-xs font-medium border",
+                      <div>
+                        <h3 className="font-medium text-gray-900 capitalize">
+                          {integration.platform}
+                        </h3>
+                        <p className="text-sm text-gray-600">
+                          {integration.platformAccountId || 'Connected'}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center space-x-3">
+                      <span className={cn(
+                        "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
                         getStatusColor(integration.status)
                       )}>
                         {getStatusIcon(integration.status)}
-                        <span className="capitalize">{integration.status}</span>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <div className="text-gray-500">Data Points</div>
-                        <div className="font-medium">{integration.dataPointsCount.toLocaleString()}</div>
-                      </div>
-                      <div>
-                        <div className="text-gray-500">Last Sync</div>
-                        <div className="font-medium">{formatLastSync(integration.lastSyncAt)}</div>
-                      </div>
-                    </div>
-
-                    {integration.status === 'error' && integration.metadata?.error && (
-                      <div className="rounded-md bg-red-50 p-3">
-                        <div className="text-sm text-red-800">
-                          {integration.metadata.error.message}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-between pt-2">
-                      <button
-                        onClick={() => handleRefreshSync(integration.id)}
-                        className="inline-flex items-center text-sm text-blue-600 hover:text-blue-700"
-                      >
-                        <RefreshCw className="mr-1 h-4 w-4" />
-                        Sync Now
-                      </button>
-                      <div className="flex items-center space-x-2">
+                        <span className="ml-1 capitalize">{integration.status}</span>
+                      </span>
+                      
+                      <div className="flex items-center space-x-1">
                         <button
-                          onClick={() => {/* Handle settings */}}
-                          className="p-2 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-50"
+                          onClick={() => handleSyncIntegration(integration.id)}
+                          className="p-2 text-gray-400 hover:text-blue-600 transition-colors"
+                          title="Sync now"
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                        </button>
+                        <button
+                          className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
+                          title="Settings"
                         >
                           <Settings className="h-4 w-4" />
                         </button>
                         <button
-                          onClick={() => handleDisconnect(integration.id, integration.platform)}
-                          className="p-2 text-gray-400 hover:text-red-600 rounded-md hover:bg-red-50"
+                          onClick={() => handleDeleteIntegration(integration.id)}
+                          className="p-2 text-gray-400 hover:text-red-600 transition-colors"
+                          title="Delete"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         )}
 
+        {/* Category Filter */}
+        <div className="flex items-center space-x-1 overflow-x-auto pb-2">
+          {CATEGORIES.map((category) => (
+            <button
+              key={category.id}
+              onClick={() => setSelectedCategory(category.id)}
+              className={cn(
+                "flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap",
+                selectedCategory === category.id
+                  ? "bg-blue-100 text-blue-700 border border-blue-200"
+                  : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
+              )}
+            >
+              <span>{category.name}</span>
+              <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+                {category.count}
+              </span>
+            </button>
+          ))}
+        </div>
+
         {/* Available Integrations */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-gray-900">Available Integrations</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredIntegrations.map((integration) => {
+            const isConnected = isIntegrationConnected(integration.platform)
             
-            {/* Category Filter */}
-            <div className="flex items-center space-x-1 bg-gray-100 rounded-lg p-1">
-              {categories.map((category) => (
-                <button
-                  key={category.id}
-                  onClick={() => setSelectedCategory(category.id)}
-                  className={cn(
-                    "inline-flex items-center space-x-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                    selectedCategory === category.id
-                      ? "bg-white text-gray-900 shadow-sm"
-                      : "text-gray-600 hover:text-gray-900"
-                  )}
-                >
-                  {category.icon}
-                  <span>{category.name}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {availableIntegrations.map((integration) => {
-              const isConnected = connectedPlatforms.has(integration.platform)
-              const isConnecting = connecting === integration.platform
-
-              return (
-                <Card key={integration.id} className="hover:shadow-md transition-shadow">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div className="p-2 bg-blue-50 rounded-lg">
-                          {integration.icon}
-                        </div>
-                        <div>
-                          <div className="flex items-center space-x-2">
-                            <CardTitle className="text-lg">{integration.name}</CardTitle>
-                            {integration.isPopular && (
-                              <span className="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">
-                                Popular
-                              </span>
-                            )}
-                          </div>
-                          <CardDescription className="text-sm mt-1">
-                            {integration.description}
-                          </CardDescription>
+            return (
+              <Card 
+                key={integration.id} 
+                className={cn(
+                  "relative group hover:shadow-lg transition-all duration-200 cursor-pointer",
+                  isConnected && "ring-2 ring-green-200 bg-green-50/30",
+                  integration.isComingSoon && "opacity-75"
+                )}
+                onClick={() => !isConnected && handleIntegrationClick(integration)}
+              >
+                <CardHeader className="pb-4">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className={cn(
+                        "w-12 h-12 rounded-lg flex items-center justify-center",
+                        integration.platform === 'shopify' && "bg-green-100 text-green-600",
+                        integration.platform === 'stripe' && "bg-purple-100 text-purple-600",
+                        integration.platform === 'woocommerce' && "bg-blue-100 text-blue-600",
+                        integration.platform === 'google_analytics' && "bg-orange-100 text-orange-600",
+                        integration.platform === 'mailchimp' && "bg-yellow-100 text-yellow-600",
+                        integration.platform === 'facebook_ads' && "bg-blue-100 text-blue-600"
+                      )}>
+                        {integration.icon}
+                      </div>
+                      <div>
+                        <CardTitle className="text-lg">{integration.name}</CardTitle>
+                        <div className="flex items-center space-x-2 mt-1">
+                          <span className="text-xs text-gray-500 capitalize bg-gray-100 px-2 py-1 rounded-md">
+                            {integration.category}
+                          </span>
+                          {integration.isPopular && (
+                            <span className="inline-flex items-center text-xs text-yellow-700 bg-yellow-100 px-2 py-1 rounded-md">
+                              <Star className="h-3 w-3 mr-1" />
+                              Popular
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <div className="text-sm font-medium text-gray-700">Features:</div>
-                      <div className="grid grid-cols-2 gap-1">
-                        {integration.features.map((feature, index) => (
-                          <div key={index} className="text-xs text-gray-600 flex items-center">
-                            <CheckCircle className="h-3 w-3 text-green-500 mr-1 flex-shrink-0" />
-                            {feature}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                    
+                    {isConnected && (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        <CheckCircle className="h-3 w-3 mr-1" />
+                        Connected
+                      </span>
+                    )}
+                    
+                    {integration.isComingSoon && (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                        Coming Soon
+                      </span>
+                    )}
+                  </div>
+                </CardHeader>
 
-                    <div className="flex items-center justify-between pt-2">
-                      <div className="text-xs text-gray-500">
-                        <Clock className="h-3 w-3 inline mr-1" />
-                        {integration.setupTime} setup
-                      </div>
-                      
-                      <button
-                        onClick={() => handleConnect(integration.platform)}
-                        disabled={isConnected || isConnecting || integration.isComingSoon}
-                        className={cn(
-                          "inline-flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                          isConnected
-                            ? "bg-green-50 text-green-700 border border-green-200 cursor-not-allowed"
-                            : integration.isComingSoon
-                            ? "bg-gray-50 text-gray-400 border border-gray-200 cursor-not-allowed"
-                            : isConnecting
-                            ? "bg-blue-50 text-blue-700 border border-blue-200 cursor-wait"
-                            : "bg-blue-600 text-white hover:bg-blue-700"
-                        )}
-                      >
-                        {isConnecting ? (
-                          <>
-                            <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                            Connecting...
-                          </>
-                        ) : isConnected ? (
-                          <>
-                            <CheckCircle className="mr-2 h-4 w-4" />
-                            Connected
-                          </>
-                        ) : integration.isComingSoon ? (
-                          'Coming Soon'
-                        ) : (
-                          <>
-                            <Plus className="mr-2 h-4 w-4" />
-                            Connect
-                          </>
-                        )}
-                      </button>
+                <CardContent className="pt-0">
+                  <p className="text-gray-600 mb-4 text-sm leading-relaxed">
+                    {integration.description}
+                  </p>
+                  
+                  <div className="mb-6">
+                    <h4 className="text-xs font-medium text-gray-700 mb-3 uppercase tracking-wide">
+                      Key Features
+                    </h4>
+                    <div className="grid grid-cols-1 gap-2">
+                      {integration.features.slice(0, 4).map((feature, idx) => (
+                        <div key={idx} className="flex items-center text-sm text-gray-600">
+                          <Check className="h-3 w-3 text-green-500 mr-2 flex-shrink-0" />
+                          {feature}
+                        </div>
+                      ))}
                     </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
+                  </div>
+                  
+                  <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                    <span className="text-xs text-gray-500">
+                      Setup time: {integration.setupTime}
+                    </span>
+                    
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (!isConnected) handleIntegrationClick(integration)
+                      }}
+                      disabled={isConnected || integration.isComingSoon}
+                      className={cn(
+                        "px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200",
+                        isConnected
+                          ? "bg-green-100 text-green-700 cursor-not-allowed"
+                          : integration.isComingSoon
+                          ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                          : "bg-blue-600 text-white hover:bg-blue-700 shadow-md hover:shadow-lg"
+                      )}
+                    >
+                      {isConnected ? (
+                        "Connected"
+                      ) : integration.isComingSoon ? (
+                        "Coming Soon"
+                      ) : (
+                        "Connect"
+                      )}
+                    </button>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
         </div>
 
         {/* Help Section */}
-        <Card className="bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200">
+        <Card>
           <CardContent className="p-6">
             <div className="flex items-start space-x-4">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Zap className="h-6 w-6 text-blue-600" />
+              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <MessageSquare className="h-6 w-6 text-blue-600" />
               </div>
               <div className="flex-1">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
                   Need help setting up integrations?
                 </h3>
                 <p className="text-gray-600 mb-4">
