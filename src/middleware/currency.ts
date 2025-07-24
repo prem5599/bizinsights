@@ -22,7 +22,7 @@ export async function currencyMiddleware(request: NextRequest) {
                         request.headers.get('x-user-currency') || 
                         DEFAULT_CURRENCY
     
-    const baseCurrency = process.env.DEFAULT_CURRENCY || DEFAULT_CURRENCY
+    const baseCurrency = DEFAULT_CURRENCY
     const locale = request.cookies.get('user-locale')?.value || 
                    request.headers.get('accept-language')?.split(',')[0] || 
                    'en-IN'
@@ -51,7 +51,7 @@ export async function currencyMiddleware(request: NextRequest) {
         maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
         httpOnly: false,
         sameSite: 'lax',
-        secure: process.env.NODE_ENV === 'production'
+        secure: false
       })
     }
 
@@ -61,7 +61,7 @@ export async function currencyMiddleware(request: NextRequest) {
         maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
         httpOnly: false,
         sameSite: 'lax',
-        secure: process.env.NODE_ENV === 'production'
+        secure: false
       })
     }
 

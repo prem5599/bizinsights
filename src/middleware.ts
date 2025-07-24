@@ -23,8 +23,7 @@ export async function middleware(request: NextRequest) {
         pathname.startsWith('/api/') && !pathname.startsWith('/api/auth')) {
       
       const token = await getToken({ 
-        req: request, 
-        secret: process.env.NEXTAUTH_SECRET 
+        req: request
       })
       
       if (!token) {
@@ -52,11 +51,13 @@ export async function middleware(request: NextRequest) {
     if (pathname.startsWith('/api/')) {
       const origin = request.headers.get('origin')
       const allowedOrigins = [
-        process.env.NEXTAUTH_URL,
-        process.env.APP_URL,
         'http://localhost:3000',
+        'http://localhost:3001', 
+        'http://localhost:3002',
+        'http://localhost:3003',
+        'http://localhost:3004',
         'https://localhost:3000'
-      ].filter(Boolean)
+      ]
       
       if (origin && allowedOrigins.includes(origin)) {
         response.headers.set('Access-Control-Allow-Origin', origin)

@@ -30,7 +30,9 @@
       "Bash(move:*)",
       "Bash(mv:*)",
       "Bash(grep:*)",
-      "Bash(tasklist)"
+      "Bash(tasklist)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": []
   }
