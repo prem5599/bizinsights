@@ -15,7 +15,7 @@ const customJestConfig = {
   testEnvironment: 'jest-environment-jsdom',
   
   // Module name mapping for absolute imports and mocks
-  moduleNameMapping: {
+  moduleNameMapper: {
     // Path mappings
     '^@/components/(.*)$': '<rootDir>/src/components/$1',
     '^@/lib/(.*)$': '<rootDir>/src/lib/$1',
@@ -92,9 +92,9 @@ const customJestConfig = {
     },
   },
   
-  // Global setup and teardown
-  globalSetup: '<rootDir>/jest.global-setup.js',
-  globalTeardown: '<rootDir>/jest.global-teardown.js',
+  // Global setup and teardown (commented out until files are created)
+  // globalSetup: '<rootDir>/jest.global-setup.js',
+  // globalTeardown: '<rootDir>/jest.global-teardown.js',
   
   // Test timeout
   testTimeout: 10000,
@@ -115,16 +115,16 @@ const customJestConfig = {
     'jest-watch-typeahead/testname',
   ],
   
-  // Setup files for environment
-  setupFiles: ['<rootDir>/jest.env.js'],
+  // Setup files for environment (commented out until file is created)
+  // setupFiles: ['<rootDir>/jest.env.js'],
   
   // Transform ignore patterns
   transformIgnorePatterns: [
     'node_modules/(?!(recharts|@recharts|d3-scale|d3-array|d3-time|@next-auth)/)',
   ],
   
-  // Snapshot serializers
-  snapshotSerializers: ['@emotion/jest/serializer'],
+  // Snapshot serializers (commented out until package is installed)
+  // snapshotSerializers: ['@emotion/jest/serializer'],
   
   // Test environment options
   testEnvironmentOptions: {

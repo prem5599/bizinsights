@@ -69,7 +69,7 @@ export class IntegrationManager {
           return {
             success: false,
             error: `Unsupported platform: ${integration.platform}`
-          })
+          }
       }
 
       // Update last sync time
@@ -220,7 +220,7 @@ export class IntegrationManager {
             metrics: [{ expression: 'ga:sessions' }],
             dimensions: [{ name: 'ga:date' }],
             pageSize: 1
-          })]
+          }]
         })
       })
 
@@ -245,7 +245,7 @@ export class IntegrationManager {
           headers: {
             'X-Shopify-Access-Token': integration.accessToken,
             'Content-Type': 'application/json'
-          })
+          }
         }
       )
 
@@ -267,8 +267,8 @@ export class IntegrationManager {
                 source: 'shopify_sync'
               }),
               dateRecorded: new Date(order.created_at)
-            })
-          }))
+            }
+          })
 
           // Create orders data point
           await prisma.dataPoint.create({
@@ -283,8 +283,8 @@ export class IntegrationManager {
                 source: 'shopify_sync'
               }),
               dateRecorded: new Date(order.created_at)
-            })
-          }))
+            }
+          })
 
           syncedCount += 2
         }
@@ -297,7 +297,7 @@ export class IntegrationManager {
           headers: {
             'X-Shopify-Access-Token': integration.accessToken,
             'Content-Type': 'application/json'
-          })
+          }
         }
       )
 
@@ -318,8 +318,8 @@ export class IntegrationManager {
                 source: 'shopify_sync'
               }),
               dateRecorded: new Date(customer.created_at)
-            })
-          }))
+            }
+          })
 
           syncedCount++
         }
@@ -353,7 +353,7 @@ export class IntegrationManager {
           headers: {
             'Authorization': `Bearer ${integration.accessToken}`,
             'Content-Type': 'application/x-www-form-urlencoded'
-          })
+          }
         }
       )
 
@@ -374,11 +374,11 @@ export class IntegrationManager {
                   source: 'stripe_sync'
                 }),
                 dateRecorded: new Date(charge.created * 1000)
-              })
-            }))
+              }
+            })
 
             syncedCount++
-          })
+          }
         }
       }
 
@@ -389,7 +389,7 @@ export class IntegrationManager {
           headers: {
             'Authorization': `Bearer ${integration.accessToken}`,
             'Content-Type': 'application/x-www-form-urlencoded'
-          })
+          }
         }
       )
 
@@ -409,8 +409,8 @@ export class IntegrationManager {
                 source: 'stripe_sync'
               }),
               dateRecorded: new Date(customer.created * 1000)
-            })
-          }))
+            }
+          })
 
           syncedCount++
         }
@@ -453,7 +453,7 @@ export class IntegrationManager {
               { expression: 'ga:pageviews' }
             ],
             dimensions: [{ name: 'ga:date' }]
-          })]
+          }]
         })
       })
 
@@ -479,8 +479,8 @@ export class IntegrationManager {
                   date: date
                 }),
                 dateRecorded: new Date(date.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'))
-              })
-            }))
+              }
+            })
 
             await prisma.dataPoint.create({
               data: {
@@ -492,8 +492,8 @@ export class IntegrationManager {
                   date: date
                 }),
                 dateRecorded: new Date(date.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'))
-              })
-            }))
+              }
+            })
 
             await prisma.dataPoint.create({
               data: {
@@ -505,11 +505,11 @@ export class IntegrationManager {
                   date: date
                 }),
                 dateRecorded: new Date(date.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'))
-              })
-            }))
+              }
+            })
 
             syncedCount += 3
-          })
+          }
         }
       }
 

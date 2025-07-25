@@ -20,15 +20,21 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-const getNavigation = (pathname: string) => [
-  { name: 'Dashboard', href: '/dashboard', icon: Home },
-  { name: 'Analytics', href: '/dashboard/analytics', icon: BarChart3 },
-  { name: 'Insights', href: '/dashboard/insights', icon: Lightbulb },
-  { name: 'Reports', href: '/dashboard/reports', icon: FileText },
-  { name: 'Integrations', href: `/${pathname.split('/')[1]}/integrations`, icon: PlusCircle },
-  { name: 'Team', href: '/dashboard/team', icon: Users },
-  { name: 'Settings', href: '/dashboard/settings', icon: Settings },
-]
+const getNavigation = (pathname: string) => {
+  // Extract orgSlug from pathname for dynamic routes
+  const pathSegments = pathname.split('/')
+  const orgSlug = pathSegments[1] || 'demo' // fallback to demo
+  
+  return [
+    { name: 'Dashboard', href: '/dashboard', icon: Home },
+    { name: 'Analytics', href: '/dashboard/analytics', icon: BarChart3 },
+    { name: 'Insights', href: '/dashboard/insights', icon: Lightbulb },
+    { name: 'Reports', href: '/dashboard/reports', icon: FileText },
+    { name: 'Integrations', href: `/${orgSlug}/integrations`, icon: PlusCircle },
+    { name: 'Team', href: '/dashboard/team', icon: Users },
+    { name: 'Settings', href: '/dashboard/settings', icon: Settings },
+  ]
+}
 
 interface SidebarProps {
   onClose?: () => void

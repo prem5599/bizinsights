@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
       maxConcurrent: body.maxConcurrent || 5
     }
 
-    let results = {
+    const results = {
       success: true,
       totalOrganizations: 0,
       successfulOrganizations: 0,

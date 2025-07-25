@@ -43,6 +43,16 @@ export async function GET() {
     }
 
     const org = membership.organization
+    
+    // Parse settings JSON string
+    let parsedSettings: Record<string, any> = {}
+    try {
+      if (org.settings && typeof org.settings === 'string') {
+        parsedSettings = JSON.parse(org.settings)
+      }
+    } catch (error) {
+      console.warn('Failed to parse organization settings:', error)
+    }
 
     // Get usage statistics
     const currentMonth = new Date()
@@ -138,10 +148,10 @@ export async function GET() {
         isTrialActive: org.trialEndsAt ? org.trialEndsAt > new Date() : false
       },
       billing: {
-        email: org.billingEmail || org.settings?.billingEmail,
-        address: org.billingAddress || org.settings?.billingAddress,
-        paymentMethod: org.settings?.paymentMethod || '**** **** **** 1234',
-        billingCycle: org.settings?.billingCycle || 'monthly'
+        email: org.billingEmail || parsedSettings.billingEmail,
+        address: org.billingAddress || parsedSettings.billingAddress,
+        paymentMethod: parsedSettings.paymentMethod || '**** **** **** 1234',
+        billingCycle: parsedSettings.billingCycle || 'monthly'
       },
       usage: {
         integrations: {

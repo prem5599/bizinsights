@@ -36,6 +36,7 @@ export interface MetricData {
   current: number
   previous: number
   change: number
+  changePercent: number
   trend: 'up' | 'down' | 'neutral'
 }
 
@@ -52,20 +53,49 @@ export interface Insight {
   description: string
   impactScore: number
   isRead: boolean
-  createdAt: Date
+  createdAt: string
+  metadata?: Record<string, any>
+}
+
+export interface DashboardIntegration {
+  id: string
+  platform: string
+  status: string
+  lastSyncAt: string | null
+  platformAccountId?: string
+  dataPointsCount?: number
+}
+
+export interface DashboardInsight {
+  id: string
+  type: string
+  title: string
+  description: string
+  impactScore: number
+  isRead: boolean
+  createdAt: string
+  metadata: Record<string, any>
+}
+
+export interface MetricsData {
+  revenue: MetricData
+  orders: MetricData
+  sessions: MetricData
+  customers: MetricData
+  conversion: MetricData
+  conversionRate: MetricData
+  aov: MetricData
+  averageOrderValue: MetricData
 }
 
 export interface DashboardData {
-  metrics: {
-    revenue: MetricData
-    orders: MetricData
-    sessions: MetricData
-    conversion: MetricData
-    aov: MetricData
-  }
+  metrics: MetricsData
   charts: {
     revenue_trend: ChartDataPoint[]
     traffic_sources: { source: string; sessions: number }[]
   }
-  insights: Insight[]
+  insights: DashboardInsight[]
+  integrations: DashboardIntegration[]
+  hasRealData: boolean
+  message: string
 }

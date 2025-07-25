@@ -9,6 +9,10 @@ export const dynamic = 'force-dynamic'
 export async function GET(req: NextRequest) {
   console.log('🚀 Analytics API route called')
   
+  // Declare variables in outer scope
+  let range: string = '30d'
+  let organizationId: string | null = null
+  
   try {
     console.log('1. Checking authentication...')
     const session = await getServerSession(authOptions)
@@ -20,8 +24,8 @@ export async function GET(req: NextRequest) {
 
     console.log('2. Parsing parameters...')
     const { searchParams } = new URL(req.url)
-    const range = searchParams.get('range') || '30d'
-    const organizationId = searchParams.get('organizationId')
+    range = searchParams.get('range') || '30d'
+    organizationId = searchParams.get('organizationId')
     console.log('Parameters:', { range, organizationId })
 
     if (!organizationId) {

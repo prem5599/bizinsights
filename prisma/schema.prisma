@@ -87,11 +87,12 @@ model Organization {
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  members      OrganizationMember[]
-  integrations Integration[]
-  insights     Insight[]
-  reports      Report[]
-  invitations  OrganizationInvitation[]
+  members          OrganizationMember[]
+  integrations     Integration[]
+  insights         Insight[]
+  reports          Report[]
+  scheduledReports ScheduledReport[]
+  invitations      OrganizationInvitation[]
 }
 
 model OrganizationMember {
@@ -205,4 +206,23 @@ model Report {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, reportType, generatedAt])
+}
+
+model ScheduledReport {
+  id               String   @id @default(cuid())
+  organizationId   String
+  reportType       String   // daily, weekly, monthly
+  title            String
+  isActive         Boolean  @default(true)
+  schedule         String   // cron expression
+  recipients       String   // JSON array of email addresses
+  lastRunAt        DateTime?
+  nextRunAt        DateTime?
+  settings         String   @default("{}")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, isActive, nextRunAt])
 }
